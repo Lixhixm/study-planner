@@ -189,3 +189,15 @@ form button { color: #fff; }
 .seg button.on { background: var(--fg); color: var(--bg); border-color: var(--fg); font-weight: 700; }
 .cd .nl { min-width: 0; }
 .cd .ed { max-width: 56px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.tabrow { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
+.tabrow .tabs { margin-bottom: 0; }
+#shot.busy { opacity: .4; pointer-events: none; }
+.shotroot { position: fixed; left: -9999px; top: 0; width: 860px; padding: 28px 28px 32px; background: var(--bg); color: var(--fg); }
+.shotroot .main { grid-template-columns: 1fr; gap: 22px; }
+.shotroot .right { display: block; }
+.shotroot .mark::before { display: none; }
+.dlg.shot { width: min(440px, 100%); max-height: 92vh; }
+.dlg.shot img { width: 100%; max-height: 62vh; object-fit: contain; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); }
+.dlg.shot button { color: var(--fg); background: var(--card); border: 1px solid var(--line2); border-radius: 10px; padding: 10px; font-size: 16px; }
+.dlg.shot button[data-dshare] { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }

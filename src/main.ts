@@ -1,4 +1,5 @@
 import "./style.css";
+import html2canvas from "html2canvas";
 
 type Task = { id: string; subject: string; text: string; status: number; next?: string; type?: string; score?: number; max?: number; rkey?: string; detail?: string; icon?: string };
 type State = {
@@ -70,7 +71,10 @@ let adding = false;
 let editing = false;
 let painting = false; // 시간표 칠하기 도구 상자 표시 여부
 let focusAdd = false; // 팝업을 막 열었거나 연속 추가할 때만 입력칸에 포커스 (다른 조작 때 키보드가 뜨지 않게)
-let dialog: { kind: "score"; id: string } | null = null;
+let dialog: { kind: "score"; id: string } | { kind: "shot" } | null = null;
+let shotUrl = "";
+let shotFile: File | null = null;
+let shotBusy = false;
 let view: "planner" | "cal" | "plan" | "set" = "planner";
 let calMonth = iso(new Date()).slice(0, 8) + "01"; // 보고 있는 달의 1일
 let planForm: string | null = null; // "new" 또는 수정 중인 계획 id
@@ -137,12 +141,14 @@ function focusInput() {
 function dialogHtml() {
   const dg = dialog;
   if (!dg) return "";
+  if (dg.kind === "shot")
+    return `<div class="backdrop"><div class="dlg shot"><h3>공유용 이미지</h3><img src="${shotUrl}" alt="플래너" /><div class="r"><button type="button" data-dclose="1">닫기</button><button type="button" data-dshare="1">저장 / 공유</button></div></div></div>`;
   const t = (S.tasks[date] ?? []).find((x) => x.id === dg.id);
   if (!t) return "";
   return `<div class="backdrop"><form class="dlg" id="dlgform"><h3>${esc(t.text)}</h3><div class="r"><input name="sc" type="number" step="any" inputmode="decimal" placeholder="점수" value="${t.score ?? ""}" /><span>/</span><input name="mx" type="number" step="any" inputmode="decimal" placeholder="만점" value="${t.max ?? 100}" /></div><div class="r"><button type="button" data-dclear="1">지우기</button><button type="button" data-dclose="1">취소</button><button>저장</button></div></form></div>`;
 }
 
-const tabs = () => `<nav class="tabs"><button data-view="planner" class="${view === "planner" ? "on" : ""}">플래너</button><button data-view="cal" class="${view === "cal" ? "on" : ""}">캘린더</button><button data-view="plan" class="${view === "plan" ? "on" : ""}">커리큘럼</button><button data-view="set" class="${view === "set" ? "on" : ""}">설정</button></nav>`;
+const tabs = () => `<div class="tabrow"><nav class="tabs"><button data-view="planner" class="${view === "planner" ? "on" : ""}">플래너</button><button data-view="cal" class="${view === "cal" ? "on" : ""}">캘린더</button><button data-view="plan" class="${view === "plan" ? "on" : ""}">커리큘럼</button><button data-view="set" class="${view === "set" ? "on" : ""}">설정</button></nav>${view === "planner" ? `<button class="add" id="shot" aria-label="이미지로 저장"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 011 1v9a1 1 0 01-1 1H4a1 1 0 01-1-1V9a1 1 0 011-1z"/><circle cx="12" cy="13" r="3.5"/></svg></button>` : ""}</div>`;
 const dayIdx = (a: string, b: string) => Math.round((parse(b).getTime() - parse(a).getTime()) / 864e5);
 const DAYW = 26;
 
@@ -354,6 +360,40 @@ function cycle(id: string) {
   }
 }
 
+// 공유용 캡처: 현재 플래너를 복제해 버튼류를 빼고 세로 한 줄로 그린 뒤 이미지로 만든다
+async function capture() {
+  if (shotBusy) return;
+  shotBusy = true;
+  document.getElementById("shot")?.classList.add("busy");
+  const root = document.createElement("div");
+  root.className = "shotroot";
+  root.innerHTML = document.getElementById("app")!.innerHTML;
+  root.querySelectorAll(".tabrow, .acts, .pop, .tools, #pt, .backdrop").forEach((n) => n.remove());
+  document.body.appendChild(root);
+  try {
+    const canvas = await html2canvas(root, { scale: 2, backgroundColor: getComputedStyle(document.body).backgroundColor, logging: false });
+    const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/png"));
+    if (!blob) throw new Error("no blob");
+    if (shotUrl) URL.revokeObjectURL(shotUrl);
+    shotUrl = URL.createObjectURL(blob);
+    shotFile = new File([blob], `planner-${date}.png`, { type: "image/png" });
+    dialog = { kind: "shot" };
+    render();
+  } catch { alert("이미지를 만들지 못했어요."); }
+  finally { root.remove(); shotBusy = false; document.getElementById("shot")?.classList.remove("busy"); }
+}
+
+async function shareShot() {
+  if (!shotFile) return;
+  try {
+    if (navigator.canShare?.({ files: [shotFile] })) { await navigator.share({ files: [shotFile] }); return; }
+  } catch (e) { if ((e as Error).name === "AbortError") return; }
+  const a = document.createElement("a"); // 공유 시트가 없으면 다운로드
+  a.href = shotUrl;
+  a.download = shotFile.name;
+  a.click();
+}
+
 const app = document.getElementById("app")!;
 let dragging = false;
 let pan: { x: number; left: number } | null = null;
@@ -376,7 +416,9 @@ app.addEventListener("click", (e) => {
   let closed = false; // 팝업 바깥을 눌러 닫은 경우도 다시 그려야 한다
   if (adding && !el.closest(".pop,#add")) { adding = false; closed = true; }
   if (planForm && !el.closest(".pop,#addplan,[data-plan]")) { planForm = null; closed = true; }
-  if (b?.dataset.view) { view = b.dataset.view as typeof view; }
+  if (b?.id === "shot") { void capture(); return; }
+  else if (b?.dataset.dshare) { void shareShot(); return; }
+  else if (b?.dataset.view) { view = b.dataset.view as typeof view; }
   else if (b?.id === "sadd") S.subjects.push({ id: uid(), name: "새 과목", color: ["#f08a4b", "#2fa8e0", "#5cb85c", "#e07ad1", "#6fd0c4", "#7fb3e8", "#e8c34a", "#9b8cf0"][S.subjects.length % 8] });
   else if (b?.dataset.sdel) {
     const id = b.dataset.sdel;
