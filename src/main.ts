@@ -187,16 +187,20 @@ function renderCal() {
     const total = Object.values(by).reduce((a, b) => a + b, 0);
     const tasks = S.tasks[dt] ?? [];
     const pct = tasks.length ? Math.round((tasks.filter((t) => t.status === 1).length / tasks.length) * 100) : 0;
-    const dots = S.subjects.filter((sj) => by[sj.id]).map((sj) => `<i style="background:${sj.color}"></i>`).join("");
-    const scores = tasks.filter((t) => t.type === "exam" && t.score != null).map((t) => `<em>${t.score}/${t.max ?? 100}</em>`).join("");
-    cells += `<button class="cd${dt === today ? " today" : ""}${dt === S.exam ? " exam" : ""}" data-d="${dt}"><span class="n">${n}</span>${dt === S.exam ? `<small class="ed">수능</small>` : ""}<span class="tm">${total ? fmt(total) : ""}</span>${tasks.length ? `<span class="pb"><i style="width:${pct}%"></i></span>` : `<span class="pb none"></span>`}<span class="dots">${dots}</span>${scores}</button>`;
+    const seg = S.subjects.filter((sj) => by[sj.id]).map((sj) => `<i style="flex:${by[sj.id]};background:${sj.color}"></i>`).join("");
+    const scores = tasks.filter((t) => t.type === "exam" && t.score != null).map((t) => `<em style="--c:${subj(t.subject).color}">${subj(t.subject).name} ${t.score}/${t.max ?? 100}</em>`).join("");
+    const C = 2 * Math.PI * 11;
+    const gauge = tasks.length && dt <= today // 미래 날짜는 아직 달성률이 의미 없다
+      ? `<svg class="gauge" viewBox="0 0 28 28"><circle cx="14" cy="14" r="11" fill="none" stroke="var(--line2)" stroke-width="3"/><circle cx="14" cy="14" r="11" fill="none" stroke="var(--accent)" stroke-width="3" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - pct / 100)}" transform="rotate(-90 14 14)"/><text x="14" y="17" text-anchor="middle">${pct}%</text></svg>`
+      : "";
+    cells += `<button class="cd${dt === today ? " today" : ""}${dt === S.exam ? " exam" : ""}" data-d="${dt}"><span class="ct"><span class="nl"><span class="n">${n}</span>${dt === S.exam ? `<small class="ed">수능</small>` : ""}</span>${gauge}</span><span class="tm">${total ? fmt(total) : ""}</span><span class="sb${total ? "" : " none"}">${seg}</span>${scores}</button>`;
   }
 
   document.getElementById("app")!.innerHTML = `${tabs()}
     <div class="top"><div><div class="label">CALENDAR</div><div class="date"><button class="nav" data-cal="-1">‹</button><span class="wd" style="font-size:clamp(28px,5vw,40px);color:var(--fg)">${first.getFullYear()}년 ${first.getMonth() + 1}월</span><button class="nav" data-cal="1">›</button></div></div>
       <div class="acts"><button class="pill" id="cal-today">이번 달</button></div></div>
     <div class="cal"><div class="cw">${"일월화수목금토".split("").map((c, i) => `<span class="${i === 0 ? "sun" : ""}">${c}</span>`).join("")}</div><div class="cg">${cells}</div></div>
-    <p class="hint">날짜를 탭하면 그날의 플래너로 이동 · 막대는 할 일 달성률</p>`;
+    <p class="hint">날짜를 탭하면 그날의 플래너로 이동 · 원은 할 일 달성률 · 막대는 과목별 공부 비중</p>`;
 }
 
 // 설정: 수능 날짜, 과목 편집, 반복 할 일, 백업
