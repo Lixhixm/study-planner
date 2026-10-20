@@ -16,12 +16,13 @@ const ic = (d: string) => `<svg viewBox="0 0 24 24" width="18" height="18" fill=
 const TYPES: Record<string, { name: string; icon: string }> = {
   lecture: { name: "강의", icon: ic('<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M9 3l3 3 3-3"/>') },
   concept: { name: "개념", icon: ic('<path d="M4 5a2 2 0 012-2h13v16H6a2 2 0 00-2 2z"/><path d="M4 21V5"/>') },
+  memo: { name: "암기", icon: ic('<rect x="3" y="8" width="14" height="12" rx="2"/><path d="M7 4h12a2 2 0 012 2v10"/>') },
   problem: { name: "문제풀이", icon: ic('<path d="M4 20h4L19 9l-4-4L4 16z"/>') },
   exam: { name: "모의고사", icon: ic('<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/>') },
   review: { name: "복습", icon: ic('<path d="M4 12a8 8 0 0114-5l2 2M20 12a8 8 0 01-14 5l-2-2M20 4v5h-5M4 20v-5h5"/>') },
   etc: { name: "기타", icon: ic('<circle cx="12" cy="12" r="2"/>') },
 };
-const PICK = ["lecture", "concept", "problem", "exam", "etc"]; // review는 자동 생성 전용
+const PICK = ["lecture", "concept", "memo", "problem", "exam", "etc"]; // review는 자동 생성 전용
 const MARKS = ["", "O", "△", "X", "->"];
 const KEY = "planner-v1";
 const defaults: State = {
