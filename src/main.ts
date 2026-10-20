@@ -81,8 +81,8 @@ const MARK_UI = [
 
 // 복습 자동 생성: 완료(O)한 공부 항목을 과목별로 묶어 내일(1일)/일요일(주간)/말일(월간)에 복습 태스크를 만든다.
 // 표시 중인 날짜가 오늘 이후일 때만 만들고, 사용자가 이미 체크한 복습은 건드리지 않는다.
-const REVIEWABLE = ["lecture", "concept", "problem", "exam"];
-const REVIEW_ACTION: Record<string, string> = { lecture: "핵심 내용 다시보기", concept: "핵심 개념 다시보기", problem: "오답 정리하기", exam: "오답 정리하기" };
+const REVIEWABLE = ["lecture", "concept", "memo", "problem", "exam"];
+const REVIEW_ACTION: Record<string, string> = { lecture: "핵심 내용 다시보기", concept: "핵심 개념 다시보기", memo: "다시 외우기", problem: "오답 정리하기", exam: "오답 정리하기" };
 function doneBySubject(from: string, to: string) {
   const out = new Map<string, Task[]>();
   for (let dt = from; dt <= to; dt = shift(dt, 1))
@@ -95,7 +95,7 @@ function syncReviews() {
   const want = new Map<string, { subject: string; text: string; detail: string; type?: string }>();
   const add = (pre: string, text: string, from: string, to: string) => {
     for (const [sid, ts] of doneBySubject(from, to)) {
-      want.set(`${pre}:${sid}`, { subject: sid, text, detail: ts.map((t) => t.text).join("\n") });
+      want.set(`${pre}:${sid}`, { subject: sid, text, detail: [...ts.reduce((m, t) => m.set(t.text, (m.get(t.text) ?? 0) + 1), new Map<string, number>())].map(([k, n]) => (n > 1 ? `${k} ×${n}` : k)).join("\n") }); // 반복 태스크는 이름 하나로 묶어 횟수 표시
     }
   };
   const d = parse(date);
