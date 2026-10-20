@@ -1,6 +1,6 @@
 import "./style.css";
 
-type Task = { id: string; subject: string; text: string; status: number; next?: string; type?: string; score?: number; max?: number; rkey?: string; detail?: string };
+type Task = { id: string; subject: string; text: string; status: number; next?: string; type?: string; score?: number; max?: number; rkey?: string; detail?: string; icon?: string };
 type State = {
   exam: string;
   subjects: { id: string; name: string; color: string }[];
@@ -16,7 +16,7 @@ const ic = (d: string) => `<svg viewBox="0 0 24 24" width="18" height="18" fill=
 const TYPES: Record<string, { name: string; icon: string }> = {
   lecture: { name: "강의", icon: ic('<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M9 3l3 3 3-3"/>') },
   concept: { name: "개념", icon: ic('<path d="M4 5a2 2 0 012-2h13v16H6a2 2 0 00-2 2z"/><path d="M4 21V5"/>') },
-  memo: { name: "암기", icon: ic('<rect x="3" y="8" width="14" height="12" rx="2"/><path d="M7 4h12a2 2 0 012 2v10"/>') },
+  memo: { name: "암기", icon: ic('<path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/><path d="M17.599 6.5a3 3 0 0 0 .399-1.375"/><path d="M6.003 5.125A3 3 0 0 0 6.401 6.5"/><path d="M3.477 10.896a4 4 0 0 1 .585-.396"/><path d="M19.938 10.5a4 4 0 0 1 .585.396"/><path d="M6 18a4 4 0 0 1-1.967-.516"/><path d="M19.967 17.484A4 4 0 0 1 18 18"/>') },
   problem: { name: "문제풀이", icon: ic('<path d="M4 20h4L19 9l-4-4L4 16z"/>') },
   exam: { name: "모의고사", icon: ic('<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/>') },
   review: { name: "복습", icon: ic('<path d="M4 12a8 8 0 0114-5l2 2M20 12a8 8 0 01-14 5l-2-2M20 4v5h-5M4 20v-5h5"/>') },
@@ -92,7 +92,7 @@ function doneBySubject(from: string, to: string) {
 }
 function syncReviews() {
   if (date < iso(new Date())) return;
-  const want = new Map<string, { subject: string; text: string; detail: string; type?: string }>();
+  const want = new Map<string, { subject: string; text: string; detail: string; type?: string; icon?: string }>();
   const add = (pre: string, text: string, from: string, to: string) => {
     for (const [sid, ts] of doneBySubject(from, to)) {
       want.set(`${pre}:${sid}`, { subject: sid, text, detail: [...ts.reduce((m, t) => m.set(t.text, (m.get(t.text) ?? 0) + 1), new Map<string, number>())].map(([k, n]) => (n > 1 ? `${k} ×${n}` : k)).join("\n") }); // 반복 태스크는 이름 하나로 묶어 횟수 표시
@@ -100,7 +100,7 @@ function syncReviews() {
   };
   const d = parse(date);
   for (const ts of doneBySubject(shift(date, -1), shift(date, -1)).values())
-    for (const t of ts) want.set(`d:${t.id}`, { subject: t.subject, text: t.text, detail: REVIEW_ACTION[t.type!] }); // 1일 복습은 원래 태스크 이름 그대로
+    for (const t of ts) want.set(`d:${t.id}`, { subject: t.subject, text: t.text, detail: REVIEW_ACTION[t.type!], icon: t.type }); // 1일 복습은 원래 태스크 이름 그대로
   if (d.getDay() === 0) add("w", "주간 복습", shift(date, -6), date);
   if (parse(shift(date, 1)).getDate() === 1) add("m", "월간 복습", iso(new Date(d.getFullYear(), d.getMonth(), 1)), date);
   for (const r of S.repeats) if (r.days.includes(d.getDay())) want.set(`r:${r.id}`, { subject: r.subject, text: r.text, detail: "", type: r.type });
@@ -109,8 +109,8 @@ function syncReviews() {
   for (const [k, w] of want) {
     if (S.dismissed.includes(`${date}|${k}`)) continue;
     const ex = list.find((t) => t.rkey === k);
-    if (ex) { ex.detail = w.detail; ex.text = w.text; }
-    else list.push({ id: uid(), subject: w.subject, text: w.text, status: 0, type: w.type ?? "review", rkey: k, detail: w.detail });
+    if (ex) { ex.detail = w.detail; ex.text = w.text; ex.icon = w.icon; }
+    else list.push({ id: uid(), subject: w.subject, text: w.text, status: 0, type: w.type ?? "review", rkey: k, detail: w.detail, icon: w.icon });
   }
   save();
 }
@@ -257,7 +257,7 @@ function render() {
     const mine = tasks.filter((t) => t.subject === s.id && (t.type === "review") === rev);
     if (!mine.length) continue;
     rows += `<section class="grp" style="--c:${s.color}"><header><span class="sn">${s.name}</span><span class="st">${rev ? "" : fmt(countCells(s.id))}</span></header>` +
-      mine.map((t) => `<div class="task s${t.status}"><span class="ty" title="${TYPES[t.type ?? "etc"].name}">${TYPES[t.type ?? "etc"].icon}</span><span class="text">${esc(t.text)}${t.detail ? `<small class="detail">${esc(t.detail)}</small>` : ""}</span>${editing ? `<button class="del" data-del="${t.id}" aria-label="삭제">${DEL}</button>` : ""}${t.type === "exam" ? `<button class="score" data-score="${t.id}">${t.score == null ? "점수" : `${t.score}<small>/${t.max ?? 100}</small>`}</button>` : ""}<button class="mark m${t.status}" data-task="${t.id}">${MARK_UI[t.status]}</button></div>`).join("") +
+      mine.map((t) => `<div class="task s${t.status}"><span class="ty" title="${TYPES[t.icon ?? t.type ?? "etc"].name}">${TYPES[t.icon ?? t.type ?? "etc"].icon}</span><span class="text">${esc(t.text)}${t.detail ? `<small class="detail">${esc(t.detail)}</small>` : ""}</span>${editing ? `<button class="del" data-del="${t.id}" aria-label="삭제">${DEL}</button>` : ""}${t.type === "exam" ? `<button class="score" data-score="${t.id}">${t.score == null ? "점수" : `${t.score}<small>/${t.max ?? 100}</small>`}</button>` : ""}<button class="mark m${t.status}" data-task="${t.id}">${MARK_UI[t.status]}</button></div>`).join("") +
       `</section>`;
   }
   return rows;
@@ -338,7 +338,7 @@ function cycle(id: string) {
   t.status = (t.status + 1) % MARKS.length;
   if (t.status === 4) {
     t.next = uid();
-    nextList.push({ id: t.next, subject: t.subject, text: t.text, status: 0, type: t.type, detail: t.detail });
+    nextList.push({ id: t.next, subject: t.subject, text: t.text, status: 0, type: t.type, detail: t.detail, icon: t.icon });
   }
 }
 
