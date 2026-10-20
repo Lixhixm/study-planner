@@ -201,3 +201,4 @@ form button { color: #fff; }
 .dlg.shot img { width: 100%; max-height: 62vh; object-fit: contain; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); }
 .dlg.shot button { color: var(--fg); background: var(--card); border: 1px solid var(--line2); border-radius: 10px; padding: 10px; font-size: 16px; }
 .dlg.shot button[data-dshare] { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.dlg.shot .hint { margin: 2px 0 0; }

@@ -142,7 +142,7 @@ function dialogHtml() {
   const dg = dialog;
   if (!dg) return "";
   if (dg.kind === "shot")
-    return `<div class="backdrop"><div class="dlg shot"><h3>공유용 이미지</h3><img src="${shotUrl}" alt="플래너" /><div class="r"><button type="button" data-dclose="1">닫기</button><button type="button" data-dshare="1">저장 / 공유</button></div></div></div>`;
+    return `<div class="backdrop"><div class="dlg shot"><h3>공유용 이미지</h3><img src="${shotUrl}" alt="플래너" /><div class="r"><button type="button" data-dclose="1">닫기</button><button type="button" data-dshare="1">저장</button></div><p class="hint">저장을 누른 뒤 '이미지 저장'을 고르면 사진 앱에 들어가요.</p></div></div>`;
   const t = (S.tasks[date] ?? []).find((x) => x.id === dg.id);
   if (!t) return "";
   return `<div class="backdrop"><form class="dlg" id="dlgform"><h3>${esc(t.text)}</h3><div class="r"><input name="sc" type="number" step="any" inputmode="decimal" placeholder="점수" value="${t.score ?? ""}" /><span>/</span><input name="mx" type="number" step="any" inputmode="decimal" placeholder="만점" value="${t.max ?? 100}" /></div><div class="r"><button type="button" data-dclear="1">지우기</button><button type="button" data-dclose="1">취소</button><button>저장</button></div></form></div>`;
