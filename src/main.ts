@@ -89,7 +89,7 @@ const countCells = (id?: string) =>
 const DEL = `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>`;
 const MARK_UI = [
   "",
-  `<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/></svg>`,
+  `<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5a8.5 8.5 0 1 1 0 17 8.5 8.5 0 1 1 0-17z"/></svg>`,
   `<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4 L21 19 H3 Z"/></svg>`,
   `<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5 L19 19 M19 5 L5 19"/></svg>`,
   `<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12 H19 M13 6 L19 12 L13 18"/></svg>`,
@@ -371,6 +371,17 @@ async function capture() {
   root.querySelectorAll(".tabrow, .acts, .pop, .tools, #pt, .backdrop").forEach((n) => n.remove());
   document.body.appendChild(root);
   try {
+    // html2canvas가 인라인 SVG를 일부 잘라 그려서, 아이콘은 이미지로 바꿔 넣는다
+    await Promise.all([...root.querySelectorAll("svg")].map(async (svg) => {
+      const cs = getComputedStyle(svg), r = svg.getBoundingClientRect();
+      const c = svg.cloneNode(true) as SVGElement;
+      c.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+      const img = new Image(r.width, r.height);
+      img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(new XMLSerializer().serializeToString(c).replace(/currentColor/g, cs.color));
+      img.style.cssText = `display:${cs.display};margin:${cs.margin};width:${r.width}px;height:${r.height}px`;
+      await img.decode().catch(() => {});
+      svg.replaceWith(img);
+    }));
     const canvas = await html2canvas(root, { scale: 2, backgroundColor: getComputedStyle(document.body).backgroundColor, logging: false });
     const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/png"));
     if (!blob) throw new Error("no blob");
