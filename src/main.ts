@@ -2,7 +2,8 @@ import "./style.css";
 
 type Task = { id: string; subject: string; text: string; status: number; next?: string; type?: string; score?: number; max?: number; rkey?: string; detail?: string; icon?: string };
 type State = {
-  exam: string;
+  ddays: { id: string; name: string; date: string }[];
+  theme: "dark" | "light" | "auto";
   subjects: { id: string; name: string; color: string }[];
   tasks: Record<string, Task[]>; // date -> tasks
   paint: Record<string, string>; // "date|h|c" -> subject id
@@ -26,7 +27,8 @@ const PICK = ["lecture", "concept", "memo", "problem", "exam", "etc"]; // review
 const MARKS = ["", "O", "△", "X", "->"];
 const KEY = "planner-v1";
 const defaults: State = {
-  exam: "2026-11-19",
+  ddays: [{ id: "exam", name: "수능", date: "2026-11-19" }],
+  theme: "dark",
   subjects: [
     { id: "kor", name: "국어", color: "#f08a4b" },
     { id: "math", name: "수학", color: "#2fa8e0" },
@@ -43,8 +45,18 @@ const defaults: State = {
 };
 
 let S: State = defaults;
-try { S = { ...defaults, ...JSON.parse(localStorage.getItem(KEY) ?? "{}") }; } catch { /* 저장소 접근 실패 시 기본값 */ }
+// 예전 단일 수능 날짜(exam)는 D-day 목록의 첫 항목으로 옮긴다
+const load = (d: any): State => ({ ...defaults, ...d, ddays: d.ddays ?? (d.exam ? [{ id: "exam", name: "수능", date: d.exam }] : defaults.ddays) });
+try { S = load(JSON.parse(localStorage.getItem(KEY) ?? "{}")); } catch { /* 저장소 접근 실패 시 기본값 */ }
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const mq = matchMedia("(prefers-color-scheme: light)");
+function applyTheme() {
+  const light = S.theme === "light" || (S.theme === "auto" && mq.matches);
+  document.documentElement.dataset.theme = light ? "light" : "dark";
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", light ? "#f2f2f5" : "#0a0a0c");
+}
+mq.addEventListener("change", applyTheme);
+applyTheme();
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch { /* ignore */ } };
 
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -58,7 +70,7 @@ let adding = false;
 let editing = false;
 let painting = false; // 시간표 칠하기 도구 상자 표시 여부
 let focusAdd = false; // 팝업을 막 열었거나 연속 추가할 때만 입력칸에 포커스 (다른 조작 때 키보드가 뜨지 않게)
-let dialog: { kind: "score"; id: string } | { kind: "exam" } | null = null;
+let dialog: { kind: "score"; id: string } | null = null;
 let view: "planner" | "cal" | "plan" | "set" = "planner";
 let calMonth = iso(new Date()).slice(0, 8) + "01"; // 보고 있는 달의 1일
 let planForm: string | null = null; // "new" 또는 수정 중인 계획 id
@@ -125,8 +137,6 @@ function focusInput() {
 function dialogHtml() {
   const dg = dialog;
   if (!dg) return "";
-  if (dg.kind === "exam")
-    return `<div class="backdrop"><form class="dlg" id="dlgform"><h3>수능 날짜</h3><input type="date" name="d" value="${S.exam}" required /><div class="r"><button type="button" data-dclose="1">취소</button><button>저장</button></div></form></div>`;
   const t = (S.tasks[date] ?? []).find((x) => x.id === dg.id);
   if (!t) return "";
   return `<div class="backdrop"><form class="dlg" id="dlgform"><h3>${esc(t.text)}</h3><div class="r"><input name="sc" type="number" step="any" inputmode="decimal" placeholder="점수" value="${t.score ?? ""}" /><span>/</span><input name="mx" type="number" step="any" inputmode="decimal" placeholder="만점" value="${t.max ?? 100}" /></div><div class="r"><button type="button" data-dclear="1">지우기</button><button type="button" data-dclose="1">취소</button><button>저장</button></div></form></div>`;
@@ -141,17 +151,17 @@ function renderPlan() {
   const today = iso(new Date());
   const lo = S.plans.reduce((m, p) => (p.start < m ? p.start : m), shift(today, -120));
   const hi = S.plans.reduce((m, p) => (p.end > m ? p.end : m), shift(today, 400));
-  const first = shift(lo, -7), last = shift(S.exam > hi ? S.exam : hi, 14);
+  const maxD = S.ddays.reduce((m, d) => (d.date > m ? d.date : m), hi);
+  const first = shift(lo, -7), last = shift(maxD, 14);
   const n = dayIdx(first, last) + 1;
   const x = (dt: string) => dayIdx(first, dt) * DAYW;
-  const left = dayIdx(today, S.exam);
-  const examLabel = left > 0 ? `D-${left}` : left === 0 ? "D-DAY" : `D+${-left}`;
+  const dlabel = (dt: string) => { const n = dayIdx(today, dt); return n > 0 ? `D-${n}` : n === 0 ? "D-DAY" : `D+${-n}`; };
 
   let days = "", lines = "", months = "";
   for (let i = 0; i < n; i++) {
     const d = parse(shift(first, i));
     const dt = shift(first, i);
-    days += `<i class="${d.getDay() === 0 || d.getDay() === 6 ? "we" : ""}${d.getDate() === 1 ? " m1" : ""}${dt === today ? " td" : dt === S.exam ? " ex" : ""}">${d.getDate()}</i>`;
+    days += `<i class="${d.getDay() === 0 || d.getDay() === 6 ? "we" : ""}${d.getDate() === 1 ? " m1" : ""}${dt === today ? " td" : S.ddays.some((d) => d.date === dt) ? " ex" : ""}">${d.getDate()}</i>`;
     if (d.getDate() === 1) {
       lines += `<div class="vl" style="left:${i * DAYW}px"></div>`;
       months += `<b style="left:${i * DAYW + 6}px">${d.getMonth() === 0 ? d.getFullYear() + "년 " : ""}${d.getMonth() + 1}월</b>`;
@@ -180,10 +190,10 @@ function renderPlan() {
     <div class="top"><div><div class="label">CURRICULUM</div><div class="date"><span class="wd" style="font-size:clamp(28px,5vw,40px);color:var(--fg)">커리큘럼</span></div></div>
       <div class="acts"><button class="pill" id="goto-today">오늘로</button><button class="add" id="addplan">${planForm ? "×" : "+"}</button>${form}</div></div>
     <div class="tl" id="tl"><div class="tlin" style="width:${n * DAYW}px">
-      <div class="tlhead"><div class="tle"><span class="ev today" style="left:${x(today) + DAYW / 2}px">오늘</span><span class="ev exam" style="left:${x(S.exam) + DAYW / 2}px">수능 ${examLabel}</span></div><div class="tlm">${months}</div><div class="tld">${days}</div></div>
+      <div class="tlhead"><div class="tle"><span class="ev today" style="left:${x(today) + DAYW / 2}px">오늘</span>${S.ddays.map((d) => `<span class="ev exam" style="left:${x(d.date) + DAYW / 2}px">${esc(d.name)} ${dlabel(d.date)}</span>`).join("")}</div><div class="tlm">${months}</div><div class="tld">${days}</div></div>
       ${rows}${lines}
       <div class="band today" style="left:${x(today)}px"></div><div class="vl today" style="left:${x(today) + DAYW / 2}px"></div>
-      <div class="band exam" style="left:${x(S.exam)}px"></div><div class="vl exam" style="left:${x(S.exam) + DAYW / 2}px"></div>
+      ${S.ddays.map((d) => `<div class="band exam" style="left:${x(d.date)}px"></div><div class="vl exam" style="left:${x(d.date) + DAYW / 2}px"></div>`).join("")}
     </div></div>
     <p class="hint">좌우로 밀어서 이동 · 막대를 탭하면 수정/삭제</p>`;
   const tl = document.getElementById("tl")!;
@@ -211,10 +221,11 @@ function renderCal() {
     const seg = S.subjects.filter((sj) => by[sj.id]).map((sj) => `<i style="flex:${by[sj.id]};background:${sj.color}"></i>`).join("");
     const scores = tasks.filter((t) => t.type === "exam" && t.score != null).map((t) => `<em style="--c:${subj(t.subject).color}">${subj(t.subject).name} ${t.score}/${t.max ?? 100}</em>`).join("");
     const C = 2 * Math.PI * 11;
+    const dd = S.ddays.filter((d) => d.date === dt);
     const gauge = tasks.length && dt <= today // 미래 날짜는 아직 달성률이 의미 없다
       ? `<svg class="gauge" viewBox="0 0 28 28"><circle cx="14" cy="14" r="11" fill="none" stroke="var(--line2)" stroke-width="3"/><circle cx="14" cy="14" r="11" fill="none" stroke="var(--accent)" stroke-width="3" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - pct / 100)}" transform="rotate(-90 14 14)"/><text x="14" y="17" text-anchor="middle">${pct}%</text></svg>`
       : "";
-    cells += `<button class="cd${dt === today ? " today" : ""}${dt === S.exam ? " exam" : ""}" data-d="${dt}"><span class="ct"><span class="nl"><span class="n">${n}</span>${dt === S.exam ? `<small class="ed">수능</small>` : ""}</span>${gauge}</span><span class="tm">${total ? fmt(total) : ""}</span><span class="sb${total ? "" : " none"}">${seg}</span>${scores}</button>`;
+    cells += `<button class="cd${dt === today ? " today" : ""}${dd.length ? " exam" : ""}" data-d="${dt}"><span class="ct"><span class="nl"><span class="n">${n}</span>${dd.length ? `<small class="ed">${esc(dd.map((d) => d.name).join(", "))}</small>` : ""}</span>${gauge}</span><span class="tm">${total ? fmt(total) : ""}</span><span class="sb${total ? "" : " none"}">${seg}</span>${scores}</button>`;
   }
 
   document.getElementById("app")!.innerHTML = `${tabs()}
@@ -232,7 +243,8 @@ function renderSet() {
   document.getElementById("app")!.innerHTML = `${tabs()}
     <div class="top"><div><div class="label">SETTINGS</div><div class="date"><span class="wd" style="font-size:clamp(28px,5vw,40px);color:var(--fg)">설정</span></div></div></div>
     <div class="sets">
-      <section class="grp set"><header><span class="sn" style="color:var(--fg)">수능 날짜</span></header><div class="srow"><input type="date" id="exam" value="${S.exam}" /></div></section>
+      <section class="grp set"><header><span class="sn" style="color:var(--fg)">화면</span></header><div class="seg">${[["dark", "다크"], ["light", "라이트"], ["auto", "시스템"]].map(([k, n]) => `<button data-theme-set="${k}" class="${S.theme === k ? "on" : ""}">${n}</button>`).join("")}</div></section>
+      <section class="grp set"><header><span class="sn" style="color:var(--fg)">D-DAY</span></header>${S.ddays.map((d) => `<div class="srow"><input class="sname" value="${esc(d.name)}" data-dname="${d.id}" autocomplete="off" /><input type="date" class="dd" value="${d.date}" data-ddate="${d.id}" /><button class="del" data-dddel="${d.id}" aria-label="삭제">${DEL}</button></div>`).join("")}<div class="srow"><button class="pill" id="ddadd">+ D-day 추가</button></div></section>
       <section class="grp set"><header><span class="sn" style="color:var(--fg)">과목</span></header>${subs}<div class="srow"><button class="pill" id="sadd">+ 과목 추가</button></div></section>
       <section class="grp set"><header><span class="sn" style="color:var(--fg)">반복 할 일</span></header>${reps}
         <form id="repform"><select name="s">${S.subjects.map((sj) => `<option value="${sj.id}">${sj.name}</option>`).join("")}</select><select name="y">${PICK.map((k) => `<option value="${k}">${TYPES[k].name}</option>`).join("")}</select><input name="t" placeholder="할 일 (예: 영단어 50개)" autocomplete="off" />
@@ -248,7 +260,7 @@ function render() {
   if (view === "plan") return renderPlan();
   syncReviews();
   const d = parse(date);
-  const dd = Math.round((parse(S.exam).getTime() - parse(iso(new Date())).getTime()) / 864e5);
+  const ddays = S.ddays.map((x) => ({ ...x, n: dayIdx(iso(new Date()), x.date) })).filter((x) => x.n >= 0).sort((a, b) => a.n - b.n);
   const tasks = S.tasks[date] ?? [];
 
   const group = (rev: boolean) => {
@@ -300,7 +312,7 @@ function render() {
         <div class="date"><button class="nav" data-day="-1">‹</button><span class="big">${d.getDate()}</span><span class="wd">${"일월화수목금토"[d.getDay()]}요일</span><button class="nav" data-day="1">›</button></div>
       </div>
       <div class="chips">${chips}</div>
-      <div class="ddaybox" id="dday"><div class="label">D-DAY</div><div class="dday">${dd >= 0 ? "D-" + dd : "D+" + -dd}</div></div>
+      <div class="ddays">${ddays.map((x) => `<div class="ddaybox" data-goset="1"><div class="label">${esc(x.name)}</div><div class="dday${ddays.length > 1 ? " sm" : ""}">${x.n === 0 ? "D-DAY" : "D-" + x.n}</div></div>`).join("")}</div>
     </div>
     <div class="main">
       <div class="left">
@@ -411,7 +423,10 @@ app.addEventListener("click", (e) => {
   else if (b?.dataset.dclose) dialog = null;
   else if (el.classList.contains("backdrop")) dialog = null;
   else if (b?.dataset.dclear) { const dg = dialog; if (dg?.kind === "score") { const t = (S.tasks[date] ?? []).find((x) => x.id === dg.id); if (t) t.score = undefined; } dialog = null; }
-  else if (el.closest("#dday")) dialog = { kind: "exam" };
+  else if (el.closest("[data-goset]")) view = "set";
+  else if (b?.id === "ddadd") S.ddays.push({ id: uid(), name: "D-day", date: shift(iso(new Date()), 30) });
+  else if (b?.dataset.dddel) S.ddays = S.ddays.filter((x) => x.id !== b.dataset.dddel);
+  else if (b?.dataset.themeSet) { S.theme = b.dataset.themeSet as State["theme"]; applyTheme(); }
   else if (el.classList.contains("cell") && painting && !paintMode) { paintCell(el); }
   else if (!closed) return;
   save(); render();
@@ -421,14 +436,16 @@ app.addEventListener("change", async (e) => {
   const el = e.target as HTMLInputElement;
   if (el.dataset.sname) { subj(el.dataset.sname).name = el.value.trim() || "과목"; save(); return; }
   if (el.dataset.scolor) { subj(el.dataset.scolor).color = el.value; save(); return; }
-  if (el.id === "exam") { if (el.value) { S.exam = el.value; save(); } return; }
+  if (el.dataset.dname) { const d = S.ddays.find((x) => x.id === el.dataset.dname); if (d) d.name = el.value.trim() || "D-day"; save(); return; }
+  if (el.dataset.ddate) { const d = S.ddays.find((x) => x.id === el.dataset.ddate); if (d && el.value) d.date = el.value; save(); return; }
   const f = el.files?.[0];
   if (!f) return;
   try {
     const d = JSON.parse(await f.text());
     if (typeof d.tasks !== "object" || typeof d.paint !== "object" || !Array.isArray(d.subjects)) throw 0;
     if (!confirm("지금 앱의 모든 기록이 백업 파일 내용으로 바뀝니다. 계속할까요?")) return;
-    S = { ...defaults, ...d };
+    S = load(d);
+    applyTheme();
     save(); render();
   } catch { alert("백업 파일을 읽을 수 없어요."); }
 });
@@ -439,8 +456,7 @@ app.addEventListener("submit", (e) => {
   if (f.id === "dlgform") {
     const dg = dialog;
     const v = (k: string) => (f.elements.namedItem(k) as HTMLInputElement).value;
-    if (dg?.kind === "exam") { if (v("d")) S.exam = v("d"); }
-    else if (dg?.kind === "score") {
+    if (dg?.kind === "score") {
       const t = (S.tasks[date] ?? []).find((x) => x.id === dg.id);
       if (t) { t.score = v("sc") === "" ? undefined : parseFloat(v("sc")); t.max = parseFloat(v("mx")) || 100; }
     }
