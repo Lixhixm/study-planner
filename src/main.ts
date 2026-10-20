@@ -213,9 +213,8 @@ function render() {
 
   const keep = scrollY;
   const active = S.plans.filter((p) => p.start <= date && date <= p.end);
-  const chips = active.slice(0, 4)
-    .map((p) => `<span class="chip" style="--c:${subj(p.subject).color}">${subj(p.subject).name} · ${esc(p.name)}</span>`).join("") +
-    (active.length > 4 ? `<span class="chip more">+${active.length - 4}</span>` : "");
+  const chips = active
+    .map((p) => `<span class="chip" style="--c:${subj(p.subject).color}">${subj(p.subject).name} · ${esc(p.name)}</span>`).join("");
   document.getElementById("app")!.innerHTML = `${tabs()}
     <div class="top">
       <div class="dateblock">

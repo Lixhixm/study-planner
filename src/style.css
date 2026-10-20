@@ -86,7 +86,7 @@ form button { background: var(--accent); border-color: var(--accent); font-weigh
 .tabs { display: flex; gap: 6px; padding: 4px; background: var(--card); border: 1px solid var(--line); border-radius: 999px; width: max-content; margin-bottom: 18px; }
 .tabs button { background: none; border: 0; padding: 8px 18px; border-radius: 999px; color: var(--dim); font-size: 15px; font-weight: 600; cursor: pointer; }
 .tabs button.on { background: var(--fg); color: #000; }
-.chips { flex: 1; align-self: center; display: flex; flex-wrap: wrap; justify-content: center; align-content: center; gap: 6px; max-height: 96px; overflow: hidden; padding: 0 16px; }
+.chips { flex: 1; align-self: center; display: flex; flex-wrap: wrap; justify-content: center; align-content: center; gap: 6px; padding: 0 16px; }
 .chip { border: 1px solid var(--c); color: var(--c); border-radius: 999px; padding: 4px 11px; font-size: 12px; font-weight: 600; white-space: nowrap; }
 .chip.more { --c: var(--dim); }
 .tl { margin-top: 8px; overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--line); border-radius: 14px; background: var(--card); cursor: grab; }
