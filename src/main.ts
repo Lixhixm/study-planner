@@ -307,7 +307,8 @@ function render() {
         ${rows}
       </div>
       <div class="right">
-        <div class="total"><div><div class="label">TOTAL TIME</div><b>${fmt(total)}</b></div><div class="bar">${bar}</div></div>
+        <div class="head"><div class="label">TOTAL TIME</div></div>
+        <div class="total"><b>${fmt(total)}</b><div class="bar">${bar}</div></div>
         <div class="head"><div class="label">TIMETABLE</div><button class="add" id="pt" aria-label="칠하기">${painting ? "×" : TYPES.problem.icon}</button></div>
         ${toolsBox}
         <div class="ttwrap" id="ttwrap"><div class="tt${painting && paintMode ? " paint" : ""}" id="tt">${grid}</div></div>
