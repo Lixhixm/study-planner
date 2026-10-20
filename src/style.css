@@ -86,21 +86,31 @@ form button { background: var(--accent); border-color: var(--accent); font-weigh
 .tabs { display: flex; gap: 6px; padding: 4px; background: var(--card); border: 1px solid var(--line); border-radius: 999px; width: max-content; margin-bottom: 18px; }
 .tabs button { background: none; border: 0; padding: 8px 18px; border-radius: 999px; color: var(--dim); font-size: 15px; font-weight: 600; cursor: pointer; }
 .tabs button.on { background: var(--fg); color: #000; }
-.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
-.chip { border: 1px solid var(--c); color: var(--c); border-radius: 999px; padding: 5px 12px; font-size: 13px; font-weight: 600; }
+.chips { flex: 1; align-self: center; display: flex; flex-wrap: wrap; justify-content: center; align-content: center; gap: 6px; max-height: 96px; overflow: hidden; padding: 0 16px; }
+.chip { border: 1px solid var(--c); color: var(--c); border-radius: 999px; padding: 4px 11px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.chip.more { --c: var(--dim); }
 .tl { margin-top: 8px; overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--line); border-radius: 14px; background: var(--card); cursor: grab; }
 .tlin { position: relative; }
-.tlhead { height: 52px; border-bottom: 1px solid var(--line); position: relative; }
+.tlhead { height: 78px; border-bottom: 1px solid var(--line); position: relative; }
 .tlm { position: relative; height: 26px; }
 .tlm b { position: absolute; top: 5px; font-size: 13px; color: var(--fg); white-space: nowrap; }
 .tld { display: flex; }
 .tld i { flex: none; width: 26px; text-align: center; font-style: normal; font-size: 11px; line-height: 26px; color: var(--dim); }
 .tld i.we { color: #5a5a62; }
 .tld i.m1 { color: var(--fg); font-weight: 700; }
-.vl { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--line); pointer-events: none; }
-.vl.today { background: var(--accent); width: 2px; z-index: 4; }
-.vl.exam { background: var(--accent); opacity: .7; z-index: 4; }
-.vl.exam span { position: absolute; top: 28px; left: 4px; font-size: 11px; color: var(--accent); font-weight: 700; }
+.vl { position: absolute; top: 26px; bottom: 0; width: 1px; background: var(--line); pointer-events: none; }
+.vl.today, .vl.exam { top: 78px; z-index: 0; }
+.vl.today { width: 2px; margin-left: -1px; background: linear-gradient(var(--accent), rgba(255, 69, 58, .25)); }
+.vl.exam { width: 0; border-left: 1.5px dashed rgba(255, 69, 58, .6); background: none; }
+.band { position: absolute; top: 78px; bottom: 0; width: 26px; pointer-events: none; z-index: 0; }
+.band.today { background: rgba(255, 69, 58, .1); }
+.band.exam { background: rgba(255, 69, 58, .05); }
+.tle { position: relative; height: 26px; }
+.ev { position: absolute; top: 3px; transform: translateX(-50%); padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; white-space: nowrap; z-index: 5; }
+.ev.today { background: var(--accent); color: #fff; }
+.ev.exam { background: var(--card); color: var(--accent); border: 1px solid var(--accent); padding: 1px 9px; }
+.tld i.td { color: #fff; font-weight: 700; background: radial-gradient(circle, var(--accent) 10.5px, transparent 11px); }
+.tld i.ex { color: var(--accent); font-weight: 700; background: radial-gradient(circle, transparent 9.5px, var(--accent) 10px 11.5px, transparent 12px); }
 .tlrow { position: relative; border-bottom: 1px solid var(--line); }
 .tlrow:last-of-type { border-bottom: 0; }
 .tlname { position: sticky; left: 0; z-index: 3; display: inline-block; padding: 10px 14px 10px 12px; font-size: 14px; font-weight: 700; background: linear-gradient(90deg, var(--card) 70%, transparent); }

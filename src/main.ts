@@ -119,11 +119,14 @@ function renderPlan() {
   const first = shift(lo, -7), last = shift(S.exam > hi ? S.exam : hi, 14);
   const n = dayIdx(first, last) + 1;
   const x = (dt: string) => dayIdx(first, dt) * DAYW;
+  const left = dayIdx(today, S.exam);
+  const examLabel = left > 0 ? `D-${left}` : left === 0 ? "D-DAY" : `D+${-left}`;
 
   let days = "", lines = "", months = "";
   for (let i = 0; i < n; i++) {
     const d = parse(shift(first, i));
-    days += `<i class="${d.getDay() === 0 || d.getDay() === 6 ? "we" : ""}${d.getDate() === 1 ? " m1" : ""}">${d.getDate()}</i>`;
+    const dt = shift(first, i);
+    days += `<i class="${d.getDay() === 0 || d.getDay() === 6 ? "we" : ""}${d.getDate() === 1 ? " m1" : ""}${dt === today ? " td" : dt === S.exam ? " ex" : ""}">${d.getDate()}</i>`;
     if (d.getDate() === 1) {
       lines += `<div class="vl" style="left:${i * DAYW}px"></div>`;
       months += `<b style="left:${i * DAYW + 6}px">${d.getMonth() === 0 ? d.getFullYear() + "년 " : ""}${d.getMonth() + 1}월</b>`;
@@ -153,10 +156,10 @@ function renderPlan() {
       <div class="acts"><button class="pill" id="goto-today">오늘로</button><button class="add" id="addplan">${planForm ? "×" : "+"}</button></div></div>
     <div style="margin-top:18px">${form}</div>
     <div class="tl" id="tl"><div class="tlin" style="width:${n * DAYW}px">
-      <div class="tlhead"><div class="tlm">${months}</div><div class="tld">${days}</div></div>
+      <div class="tlhead"><div class="tle"><span class="ev today" style="left:${x(today) + DAYW / 2}px">오늘</span><span class="ev exam" style="left:${x(S.exam) + DAYW / 2}px">수능 ${examLabel}</span></div><div class="tlm">${months}</div><div class="tld">${days}</div></div>
       ${rows}${lines}
-      <div class="vl today" style="left:${x(today) + DAYW / 2}px"></div>
-      <div class="vl exam" style="left:${x(S.exam) + DAYW / 2}px"><span>수능</span></div>
+      <div class="band today" style="left:${x(today)}px"></div><div class="vl today" style="left:${x(today) + DAYW / 2}px"></div>
+      <div class="band exam" style="left:${x(S.exam)}px"></div><div class="vl exam" style="left:${x(S.exam) + DAYW / 2}px"></div>
     </div></div>
     <p class="hint">좌우로 밀어서 이동 · 막대를 탭하면 수정/삭제</p>`;
   const tl = document.getElementById("tl")!;
@@ -209,17 +212,19 @@ function render() {
   }
 
   const keep = scrollY;
-  const chips = S.plans.filter((p) => p.start <= date && date <= p.end)
-    .map((p) => `<span class="chip" style="--c:${subj(p.subject).color}">${subj(p.subject).name} · ${esc(p.name)}</span>`).join("");
+  const active = S.plans.filter((p) => p.start <= date && date <= p.end);
+  const chips = active.slice(0, 4)
+    .map((p) => `<span class="chip" style="--c:${subj(p.subject).color}">${subj(p.subject).name} · ${esc(p.name)}</span>`).join("") +
+    (active.length > 4 ? `<span class="chip more">+${active.length - 4}</span>` : "");
   document.getElementById("app")!.innerHTML = `${tabs()}
     <div class="top">
       <div class="dateblock">
         <div class="label">${d.getFullYear()}년 ${d.getMonth() + 1}월</div>
         <div class="date"><button class="nav" data-day="-1">‹</button><span class="big">${d.getDate()}</span><span class="wd">${"일월화수목금토"[d.getDay()]}요일</span><button class="nav" data-day="1">›</button></div>
       </div>
+      <div class="chips">${chips}</div>
       <div class="ddaybox" id="dday"><div class="label">D-DAY</div><div class="dday">${dd >= 0 ? "D-" + dd : "D+" + -dd}</div></div>
     </div>
-    ${chips ? `<div class="chips">${chips}</div>` : ""}
     <div class="main">
       <div class="left">
         <div class="head"><div class="label">TASKS</div><div class="acts"><button class="pill${editing ? " on" : ""}" id="edit">편집</button><button class="add" id="add">${adding ? "×" : "+"}</button></div></div>
