@@ -9,6 +9,7 @@ type State = {
   dismissed: string[]; // 지운 자동 복습 "date|rkey"
   lastBackup?: string;
   plans: { id: string; subject: string; name: string; start: string; end: string }[];
+  repeats: { id: string; subject: string; type: string; text: string; days: number[] }[];
 };
 
 const ic = (d: string) => `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
@@ -37,6 +38,7 @@ const defaults: State = {
   paint: {},
   dismissed: [],
   plans: [],
+  repeats: [],
 };
 
 let S: State = defaults;
@@ -53,7 +55,8 @@ let tool = "kor"; // 과목 id 또는 "erase"
 let paintMode = false;
 let adding = false;
 let editing = false;
-let view: "planner" | "plan" = "planner";
+let view: "planner" | "cal" | "plan" | "set" = "planner";
+let calMonth = iso(new Date()).slice(0, 8) + "01"; // 보고 있는 달의 1일
 let planForm: string | null = null; // "new" 또는 수정 중인 계획 id
 let tlLeft: number | null = null;
 
@@ -85,7 +88,7 @@ function doneBySubject(from: string, to: string) {
 }
 function syncReviews() {
   if (date < iso(new Date())) return;
-  const want = new Map<string, { subject: string; text: string; detail: string }>();
+  const want = new Map<string, { subject: string; text: string; detail: string; type?: string }>();
   const add = (pre: string, text: string, from: string, to: string) => {
     for (const [sid, ts] of doneBySubject(from, to)) {
       want.set(`${pre}:${sid}`, { subject: sid, text, detail: ts.map((t) => t.text).join("\n") });
@@ -96,18 +99,19 @@ function syncReviews() {
     for (const t of ts) want.set(`d:${t.id}`, { subject: t.subject, text: t.text, detail: REVIEW_ACTION[t.type!] }); // 1일 복습은 원래 태스크 이름 그대로
   if (d.getDay() === 0) add("w", "주간 복습", shift(date, -6), date);
   if (parse(shift(date, 1)).getDate() === 1) add("m", "월간 복습", iso(new Date(d.getFullYear(), d.getMonth(), 1)), date);
+  for (const r of S.repeats) if (r.days.includes(d.getDay())) want.set(`r:${r.id}`, { subject: r.subject, text: r.text, detail: "", type: r.type });
   const list = (S.tasks[date] ??= []);
   for (let i = list.length - 1; i >= 0; i--) if (list[i].rkey && !want.has(list[i].rkey!) && list[i].status === 0) list.splice(i, 1);
   for (const [k, w] of want) {
     if (S.dismissed.includes(`${date}|${k}`)) continue;
     const ex = list.find((t) => t.rkey === k);
     if (ex) { ex.detail = w.detail; ex.text = w.text; }
-    else list.push({ id: uid(), subject: w.subject, text: w.text, status: 0, type: "review", rkey: k, detail: w.detail });
+    else list.push({ id: uid(), subject: w.subject, text: w.text, status: 0, type: w.type ?? "review", rkey: k, detail: w.detail });
   }
   save();
 }
 
-const tabs = () => `<nav class="tabs"><button data-view="planner" class="${view === "planner" ? "on" : ""}">플래너</button><button data-view="plan" class="${view === "plan" ? "on" : ""}">커리큘럼</button></nav>`;
+const tabs = () => `<nav class="tabs"><button data-view="planner" class="${view === "planner" ? "on" : ""}">플래너</button><button data-view="cal" class="${view === "cal" ? "on" : ""}">캘린더</button><button data-view="plan" class="${view === "plan" ? "on" : ""}">커리큘럼</button><button data-view="set" class="${view === "set" ? "on" : ""}">설정</button></nav>`;
 const dayIdx = (a: string, b: string) => Math.round((parse(b).getTime() - parse(a).getTime()) / 864e5);
 const DAYW = 26;
 
@@ -167,7 +171,55 @@ function renderPlan() {
   tlLeft = tl.scrollLeft;
 }
 
+// 캘린더: 월간 달력. 날짜 칸에 공부 시간, 할 일 달성률, 공부한 과목 점, 모의고사 점수를 보여준다.
+function renderCal() {
+  const first = parse(calMonth);
+  const today = iso(new Date());
+  const perDay: Record<string, Record<string, number>> = {};
+  for (const k in S.paint) { const m = (perDay[k.slice(0, 10)] ??= {}); m[S.paint[k]] = (m[S.paint[k]] ?? 0) + 1; }
+
+  let cells = "";
+  for (let i = 0; i < first.getDay(); i++) cells += `<div class="cd blank"></div>`;
+  const days = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
+  for (let n = 1; n <= days; n++) {
+    const dt = iso(new Date(first.getFullYear(), first.getMonth(), n));
+    const by = perDay[dt] ?? {};
+    const total = Object.values(by).reduce((a, b) => a + b, 0);
+    const tasks = S.tasks[dt] ?? [];
+    const pct = tasks.length ? Math.round((tasks.filter((t) => t.status === 1).length / tasks.length) * 100) : 0;
+    const dots = S.subjects.filter((sj) => by[sj.id]).map((sj) => `<i style="background:${sj.color}"></i>`).join("");
+    const scores = tasks.filter((t) => t.type === "exam" && t.score != null).map((t) => `<em>${t.score}/${t.max ?? 100}</em>`).join("");
+    cells += `<button class="cd${dt === today ? " today" : ""}${dt === S.exam ? " exam" : ""}" data-d="${dt}"><span class="n">${n}</span>${dt === S.exam ? `<small class="ed">수능</small>` : ""}<span class="tm">${total ? fmt(total) : ""}</span>${tasks.length ? `<span class="pb"><i style="width:${pct}%"></i></span>` : `<span class="pb none"></span>`}<span class="dots">${dots}</span>${scores}</button>`;
+  }
+
+  document.getElementById("app")!.innerHTML = `${tabs()}
+    <div class="top"><div><div class="label">CALENDAR</div><div class="date"><button class="nav" data-cal="-1">‹</button><span class="wd" style="font-size:clamp(28px,5vw,40px);color:var(--fg)">${first.getFullYear()}년 ${first.getMonth() + 1}월</span><button class="nav" data-cal="1">›</button></div></div>
+      <div class="acts"><button class="pill" id="cal-today">이번 달</button></div></div>
+    <div class="cal"><div class="cw">${"일월화수목금토".split("").map((c, i) => `<span class="${i === 0 ? "sun" : ""}">${c}</span>`).join("")}</div><div class="cg">${cells}</div></div>
+    <p class="hint">날짜를 탭하면 그날의 플래너로 이동 · 막대는 할 일 달성률</p>`;
+}
+
+// 설정: 수능 날짜, 과목 편집, 반복 할 일, 백업
+const DOW = "일월화수목금토";
+function renderSet() {
+  const subs = S.subjects.map((sj) => `<div class="srow"><input type="color" value="${sj.color}" data-scolor="${sj.id}" /><input class="sname" value="${esc(sj.name)}" data-sname="${sj.id}" autocomplete="off" /><button class="del" data-sdel="${sj.id}" aria-label="삭제">${DEL}</button></div>`).join("");
+  const reps = S.repeats.map((r) => `<div class="srow"><span class="ty">${TYPES[r.type].icon}</span><span class="rtxt"><b style="color:${subj(r.subject).color}">${subj(r.subject).name}</b> ${esc(r.text)}<small>${r.days.length === 7 ? "매일" : r.days.map((d) => DOW[d]).join(" ")}</small></span><button class="del" data-rdel="${r.id}" aria-label="삭제">${DEL}</button></div>`).join("") || `<p class="empty" style="padding:12px 0">반복 할 일이 없어요.</p>`;
+  document.getElementById("app")!.innerHTML = `${tabs()}
+    <div class="top"><div><div class="label">SETTINGS</div><div class="date"><span class="wd" style="font-size:clamp(28px,5vw,40px);color:var(--fg)">설정</span></div></div></div>
+    <div class="sets">
+      <section class="grp set"><header><span class="sn" style="color:var(--fg)">수능 날짜</span></header><div class="srow"><input type="date" id="exam" value="${S.exam}" /></div></section>
+      <section class="grp set"><header><span class="sn" style="color:var(--fg)">과목</span></header>${subs}<div class="srow"><button class="pill" id="sadd">+ 과목 추가</button></div></section>
+      <section class="grp set"><header><span class="sn" style="color:var(--fg)">반복 할 일</span></header>${reps}
+        <form id="repform"><select name="s">${S.subjects.map((sj) => `<option value="${sj.id}">${sj.name}</option>`).join("")}</select><select name="y">${PICK.map((k) => `<option value="${k}">${TYPES[k].name}</option>`).join("")}</select><input name="t" placeholder="할 일 (예: 영단어 50개)" autocomplete="off" />
+          <div class="days">${[...DOW].map((c, i) => `<label><input type="checkbox" name="d" value="${i}" checked /><span>${c}</span></label>`).join("")}</div><button>추가</button></form></section>
+      <section class="grp set"><header><span class="sn" style="color:var(--fg)">백업</span></header><div class="srow foot"><button class="pill" id="export">백업 내보내기</button><button class="pill" id="import">백업 불러오기</button><span>마지막 백업: ${S.lastBackup ?? "없음"}</span></div></section>
+    </div>
+    <input type="file" id="file" accept=".json,application/json" hidden />`;
+}
+
 function render() {
+  if (view === "set") return renderSet();
+  if (view === "cal") return renderCal();
   if (view === "plan") return renderPlan();
   syncReviews();
   const d = parse(date);
@@ -235,9 +287,7 @@ function render() {
         <div class="tools">${tools}</div>
         <div class="ttwrap" id="ttwrap"><div class="tt${paintMode ? " paint" : ""}" id="tt">${grid}</div></div>
       </div>
-    </div>
-    <footer class="foot"><button class="pill" id="export">백업 내보내기</button><button class="pill" id="import">백업 불러오기</button><span>마지막 백업: ${S.lastBackup ?? "없음"}</span></footer>
-    <input type="file" id="file" accept=".json,application/json" hidden />`;
+    </div>`;
   scrollTo(0, keep);
   if (adding) (document.querySelector("#addform input") as HTMLInputElement).focus();
 }
@@ -285,6 +335,22 @@ app.addEventListener("click", (e) => {
   const el = e.target as HTMLElement;
   const b = el.closest("button") as HTMLElement | null;
   if (b?.dataset.view) { view = b.dataset.view as typeof view; }
+  else if (b?.id === "sadd") S.subjects.push({ id: uid(), name: "새 과목", color: ["#f08a4b", "#2fa8e0", "#5cb85c", "#e07ad1", "#6fd0c4", "#7fb3e8", "#e8c34a", "#9b8cf0"][S.subjects.length % 8] });
+  else if (b?.dataset.sdel) {
+    const id = b.dataset.sdel;
+    if (S.subjects.length <= 1) { alert("과목은 최소 1개가 필요해요."); return; }
+    if (!confirm(`"${subj(id).name}" 과목과 그 과목의 할 일, 시간표 기록, 계획, 반복 할 일이 모두 지워져요. 계속할까요?`)) return;
+    S.subjects = S.subjects.filter((x) => x.id !== id);
+    for (const k in S.tasks) S.tasks[k] = S.tasks[k].filter((t) => t.subject !== id);
+    for (const k in S.paint) if (S.paint[k] === id) delete S.paint[k];
+    S.plans = S.plans.filter((x) => x.subject !== id);
+    S.repeats = S.repeats.filter((x) => x.subject !== id);
+    if (tool === id) tool = S.subjects[0].id;
+  }
+  else if (b?.dataset.rdel) S.repeats = S.repeats.filter((r) => r.id !== b.dataset.rdel);
+  else if (b?.dataset.cal) { const f = parse(calMonth); calMonth = iso(new Date(f.getFullYear(), f.getMonth() + +b.dataset.cal, 1)); }
+  else if (b?.id === "cal-today") calMonth = iso(new Date()).slice(0, 8) + "01";
+  else if (b?.dataset.d) { date = b.dataset.d; view = "planner"; }
   else if (b?.id === "addplan") planForm = planForm ? null : "new";
   else if (b?.id === "goto-today") tlLeft = null;
   else if (b?.dataset.plan) { if (panMoved) return; planForm = b.dataset.plan; }
@@ -325,7 +391,11 @@ app.addEventListener("click", (e) => {
 });
 
 app.addEventListener("change", async (e) => {
-  const f = (e.target as HTMLInputElement).files?.[0];
+  const el = e.target as HTMLInputElement;
+  if (el.dataset.sname) { subj(el.dataset.sname).name = el.value.trim() || "과목"; save(); return; }
+  if (el.dataset.scolor) { subj(el.dataset.scolor).color = el.value; save(); return; }
+  if (el.id === "exam") { if (el.value) { S.exam = el.value; save(); } return; }
+  const f = el.files?.[0];
   if (!f) return;
   try {
     const d = JSON.parse(await f.text());
@@ -339,6 +409,14 @@ app.addEventListener("change", async (e) => {
 app.addEventListener("submit", (e) => {
   e.preventDefault();
   const f = e.target as HTMLFormElement;
+  if (f.id === "repform") {
+    const text = (f.elements.namedItem("t") as HTMLInputElement).value.trim();
+    const days = [...f.querySelectorAll<HTMLInputElement>('input[name="d"]:checked')].map((c) => +c.value);
+    if (!text || !days.length) return;
+    S.repeats.push({ id: uid(), subject: (f.elements.namedItem("s") as HTMLSelectElement).value, type: (f.elements.namedItem("y") as HTMLSelectElement).value, text, days });
+    save(); render();
+    return;
+  }
   if (f.id === "planform") {
     const v = (k: string) => (f.elements.namedItem(k) as HTMLInputElement | HTMLSelectElement).value;
     let [a, z] = [v("a"), v("z")];
