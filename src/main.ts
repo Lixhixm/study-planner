@@ -8,6 +8,7 @@ type State = {
   paint: Record<string, string>; // "date|h|c" -> subject id
   dismissed: string[]; // 지운 자동 복습 "date|rkey"
   lastBackup?: string;
+  plans: { id: string; subject: string; name: string; start: string; end: string }[];
 };
 
 const ic = (d: string) => `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
@@ -35,6 +36,7 @@ const defaults: State = {
   tasks: {},
   paint: {},
   dismissed: [],
+  plans: [],
 };
 
 let S: State = defaults;
@@ -51,6 +53,9 @@ let tool = "kor"; // 과목 id 또는 "erase"
 let paintMode = false;
 let adding = false;
 let editing = false;
+let view: "planner" | "plan" = "planner";
+let planForm: string | null = null; // "new" 또는 수정 중인 계획 id
+let tlLeft: number | null = null;
 
 const subj = (id: string) => S.subjects.find((s) => s.id === id)!;
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
@@ -102,7 +107,65 @@ function syncReviews() {
   save();
 }
 
+const tabs = () => `<nav class="tabs"><button data-view="planner" class="${view === "planner" ? "on" : ""}">플래너</button><button data-view="plan" class="${view === "plan" ? "on" : ""}">커리큘럼</button></nav>`;
+const dayIdx = (a: string, b: string) => Math.round((parse(b).getTime() - parse(a).getTime()) / 864e5);
+const DAYW = 26;
+
+// 커리큘럼: 끝없이 이어지는 가로 타임라인. 과목별 줄에 계획 막대를 놓는다.
+function renderPlan() {
+  const today = iso(new Date());
+  const lo = S.plans.reduce((m, p) => (p.start < m ? p.start : m), shift(today, -120));
+  const hi = S.plans.reduce((m, p) => (p.end > m ? p.end : m), shift(today, 400));
+  const first = shift(lo, -7), last = shift(S.exam > hi ? S.exam : hi, 14);
+  const n = dayIdx(first, last) + 1;
+  const x = (dt: string) => dayIdx(first, dt) * DAYW;
+
+  let days = "", lines = "", months = "";
+  for (let i = 0; i < n; i++) {
+    const d = parse(shift(first, i));
+    days += `<i class="${d.getDay() === 0 || d.getDay() === 6 ? "we" : ""}${d.getDate() === 1 ? " m1" : ""}">${d.getDate()}</i>`;
+    if (d.getDate() === 1) {
+      lines += `<div class="vl" style="left:${i * DAYW}px"></div>`;
+      months += `<b style="left:${i * DAYW + 6}px">${d.getMonth() === 0 ? d.getFullYear() + "년 " : ""}${d.getMonth() + 1}월</b>`;
+    }
+  }
+
+  let rows = "";
+  for (const sj of S.subjects) {
+    const mine = S.plans.filter((p) => p.subject === sj.id).sort((a, b) => a.start.localeCompare(b.start));
+    const laneEnd: string[] = [];
+    const bars = mine.map((p) => {
+      let l = laneEnd.findIndex((e) => e < p.start);
+      if (l < 0) l = laneEnd.length;
+      laneEnd[l] = p.end;
+      return `<button class="bar-p" data-plan="${p.id}" style="left:${x(p.start)}px;width:${(dayIdx(p.start, p.end) + 1) * DAYW}px;top:${8 + l * 36}px;background:${sj.color}"><span>${esc(p.name)}</span></button>`;
+    }).join("");
+    rows += `<div class="tlrow" style="height:${Math.max(1, laneEnd.length) * 36 + 16}px"><span class="tlname" style="color:${sj.color}">${sj.name}</span>${bars}</div>`;
+  }
+
+  const pf = planForm && planForm !== "new" ? S.plans.find((p) => p.id === planForm) : undefined;
+  const form = planForm
+    ? `<form id="planform"><select name="s">${S.subjects.map((s) => `<option value="${s.id}"${pf?.subject === s.id ? " selected" : ""}>${s.name}</option>`).join("")}</select><input name="n" placeholder="계획 이름 (예: 기출 3회독)" value="${esc(pf?.name ?? "")}" autocomplete="off" /><input type="date" name="a" value="${pf?.start ?? today}" /><input type="date" name="z" value="${pf?.end ?? shift(today, 14)}" /><button>저장</button>${pf ? `<button type="button" class="dg" data-plandel="${pf.id}">삭제</button>` : ""}</form>`
+    : "";
+
+  document.getElementById("app")!.innerHTML = `${tabs()}
+    <div class="top"><div><div class="label">CURRICULUM</div><div class="date"><span class="wd" style="font-size:clamp(28px,5vw,40px);color:var(--fg)">커리큘럼</span></div></div>
+      <div class="acts"><button class="pill" id="goto-today">오늘로</button><button class="add" id="addplan">${planForm ? "×" : "+"}</button></div></div>
+    <div style="margin-top:18px">${form}</div>
+    <div class="tl" id="tl"><div class="tlin" style="width:${n * DAYW}px">
+      <div class="tlhead"><div class="tlm">${months}</div><div class="tld">${days}</div></div>
+      ${rows}${lines}
+      <div class="vl today" style="left:${x(today) + DAYW / 2}px"></div>
+      <div class="vl exam" style="left:${x(S.exam) + DAYW / 2}px"><span>수능</span></div>
+    </div></div>
+    <p class="hint">좌우로 밀어서 이동 · 막대를 탭하면 수정/삭제</p>`;
+  const tl = document.getElementById("tl")!;
+  tl.scrollLeft = tlLeft ?? Math.max(0, x(today) - tl.clientWidth * 0.3);
+  tlLeft = tl.scrollLeft;
+}
+
 function render() {
+  if (view === "plan") return renderPlan();
   syncReviews();
   const d = parse(date);
   const dd = Math.round((parse(S.exam).getTime() - parse(iso(new Date())).getTime()) / 864e5);
@@ -146,7 +209,9 @@ function render() {
   }
 
   const keep = scrollY;
-  document.getElementById("app")!.innerHTML = `
+  const chips = S.plans.filter((p) => p.start <= date && date <= p.end)
+    .map((p) => `<span class="chip" style="--c:${subj(p.subject).color}">${subj(p.subject).name} · ${esc(p.name)}</span>`).join("");
+  document.getElementById("app")!.innerHTML = `${tabs()}
     <div class="top">
       <div class="dateblock">
         <div class="label">${d.getFullYear()}년 ${d.getMonth() + 1}월</div>
@@ -154,6 +219,7 @@ function render() {
       </div>
       <div class="ddaybox" id="dday"><div class="label">D-DAY</div><div class="dday">${dd >= 0 ? "D-" + dd : "D+" + -dd}</div></div>
     </div>
+    ${chips ? `<div class="chips">${chips}</div>` : ""}
     <div class="main">
       <div class="left">
         <div class="head"><div class="label">TASKS</div><div class="acts"><button class="pill${editing ? " on" : ""}" id="edit">편집</button><button class="add" id="add">${adding ? "×" : "+"}</button></div></div>
@@ -197,11 +263,29 @@ function cycle(id: string) {
 
 const app = document.getElementById("app")!;
 let dragging = false;
+let pan: { x: number; left: number } | null = null;
+let panMoved = false;
+app.addEventListener("scroll", (e) => { if ((e.target as HTMLElement).id === "tl") tlLeft = (e.target as HTMLElement).scrollLeft; }, true);
+app.addEventListener("pointerdown", (e) => {
+  const tl = (e.target as HTMLElement).closest("#tl");
+  if (tl && e.pointerType === "mouse") { pan = { x: e.clientX, left: tl.scrollLeft }; panMoved = false; }
+});
+addEventListener("pointermove", (e) => {
+  if (!pan) return;
+  if (Math.abs(e.clientX - pan.x) > 5) panMoved = true;
+  document.getElementById("tl")!.scrollLeft = pan.left - (e.clientX - pan.x);
+});
+addEventListener("pointerup", () => { pan = null; setTimeout(() => (panMoved = false), 0); });
 
 app.addEventListener("click", (e) => {
   const el = e.target as HTMLElement;
   const b = el.closest("button") as HTMLElement | null;
-  if (b?.id === "export") {
+  if (b?.dataset.view) { view = b.dataset.view as typeof view; }
+  else if (b?.id === "addplan") planForm = planForm ? null : "new";
+  else if (b?.id === "goto-today") tlLeft = null;
+  else if (b?.dataset.plan) { if (panMoved) return; planForm = b.dataset.plan; }
+  else if (b?.dataset.plandel) { S.plans = S.plans.filter((p) => p.id !== b.dataset.plandel); planForm = null; }
+  else if (b?.id === "export") {
     S.lastBackup = iso(new Date());
     save();
     const a = document.createElement("a");
@@ -251,6 +335,18 @@ app.addEventListener("change", async (e) => {
 app.addEventListener("submit", (e) => {
   e.preventDefault();
   const f = e.target as HTMLFormElement;
+  if (f.id === "planform") {
+    const v = (k: string) => (f.elements.namedItem(k) as HTMLInputElement | HTMLSelectElement).value;
+    let [a, z] = [v("a"), v("z")];
+    if (!v("n").trim() || !a || !z) return;
+    if (a > z) [a, z] = [z, a];
+    const cur = S.plans.find((p) => p.id === planForm);
+    const next = { id: cur?.id ?? uid(), subject: v("s"), name: v("n").trim(), start: a, end: z };
+    if (cur) Object.assign(cur, next); else S.plans.push(next);
+    planForm = null;
+    save(); render();
+    return;
+  }
   const text = (f.elements.namedItem("t") as HTMLInputElement).value.trim();
   if (text) (S.tasks[date] ??= []).push({ id: uid(), subject: (f.elements.namedItem("s") as HTMLSelectElement).value, text, status: 0, type: (f.elements.namedItem("y") as HTMLSelectElement).value });
   save(); render();
