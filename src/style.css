@@ -22,7 +22,7 @@ button { font: inherit; color: inherit; }
 
 /* 본문 */
 .main { display: grid; grid-template-columns: minmax(0, 1fr) clamp(300px, 38vw, 380px); gap: clamp(20px, 3.5vw, 44px); margin-top: 26px; align-items: start; }
-.head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; position: relative; }
 .add { width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line2); background: var(--card); font-size: 24px; line-height: 1; cursor: pointer; }
 .add:active { background: var(--line); }
 
@@ -75,7 +75,7 @@ form button { background: var(--accent); border-color: var(--accent); font-weigh
 .score { background: var(--bg); border: 1px solid var(--line2); border-radius: 999px; padding: 4px 12px; font-size: 15px; font-weight: 600; margin-right: 6px; cursor: pointer; font-variant-numeric: tabular-nums; }
 .score small { font-size: 11px; color: var(--dim); font-weight: 400; }
 .detail { display: block; white-space: pre-line; font-size: 12px; color: var(--dim); margin-top: 1px; }
-.acts { display: flex; gap: 8px; align-items: center; }
+.acts { display: flex; gap: 8px; align-items: center; position: relative; }
 .pill { background: var(--card); border: 1px solid var(--line2); border-radius: 999px; padding: 8px 16px; font-size: 14px; cursor: pointer; }
 .pill.on { background: var(--fg); color: #000; border-color: var(--fg); }
 .del { width: 44px; height: 44px; flex: none; background: none; border: 0; color: var(--accent); cursor: pointer; }
@@ -117,8 +117,6 @@ form button { background: var(--accent); border-color: var(--accent); font-weigh
 .bar-p { position: absolute; height: 30px; border: 0; border-radius: 8px; color: #000; font-size: 13px; font-weight: 700; text-align: left; padding: 0 10px; cursor: pointer; overflow: clip; white-space: nowrap; z-index: 1; }
 .bar-p span { position: sticky; left: 90px; }
 .hint { color: var(--dim); font-size: 12px; text-align: center; margin-top: 10px; }
-#planform { flex-wrap: wrap; }
-#planform input[type=date] { min-width: 150px; }
 .dg { background: transparent !important; color: var(--accent) !important; border-color: var(--accent) !important; }
 
 .cal { margin-top: 20px; }
@@ -163,3 +161,18 @@ input[type=color]::-webkit-color-swatch { border: 0; border-radius: 50%; }
 .cd .sb.none { background: transparent; }
 .cd .sb i { display: block; height: 100%; }
 .cd em { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-style: normal; font-size: 11px; font-weight: 600; color: var(--c); border: 1px solid var(--c); border-radius: 999px; padding: 0 7px; }
+
+.pop { position: absolute; right: 0; top: calc(100% + 8px); width: min(360px, 88vw); z-index: 30; background: var(--card); border: 1px solid var(--line2); border-radius: 16px; padding: 12px; box-shadow: 0 18px 48px rgba(0, 0, 0, .65); }
+.pop form { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; }
+.pop select { flex: 1 1 40%; min-width: 0; }
+.pop input { flex: 1 1 100%; min-width: 0; }
+.pop input[type=date] { flex: 1 1 40%; }
+.pop button { flex: 1 1 auto; }
+.tools.box { background: var(--card); border: 1px solid var(--line2); border-radius: 14px; padding: 10px; margin: 0 0 10px; box-shadow: 0 10px 30px rgba(0, 0, 0, .5); }
+.backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, .6); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 16px; }
+.dlg { flex-direction: column; width: min(340px, 100%); background: var(--card); border: 1px solid var(--line2); border-radius: 18px; padding: 18px; margin: 0; box-shadow: 0 24px 60px rgba(0, 0, 0, .7); }
+.dlg h3 { margin: 0 0 4px; font-size: 17px; }
+.dlg .r { display: flex; gap: 8px; align-items: center; }
+.dlg .r input { flex: 1; min-width: 0; }
+.dlg .r button { flex: 1; }
+.dlg button[data-dclose], .dlg button[data-dclear] { background: var(--card); border-color: var(--line2); color: var(--fg); }

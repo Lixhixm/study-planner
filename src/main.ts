@@ -55,6 +55,9 @@ let tool = "kor"; // 과목 id 또는 "erase"
 let paintMode = false;
 let adding = false;
 let editing = false;
+let painting = false; // 시간표 칠하기 도구 상자 표시 여부
+let focusAdd = false; // 팝업을 막 열었거나 연속 추가할 때만 입력칸에 포커스 (다른 조작 때 키보드가 뜨지 않게)
+let dialog: { kind: "score"; id: string } | { kind: "exam" } | null = null;
 let view: "planner" | "cal" | "plan" | "set" = "planner";
 let calMonth = iso(new Date()).slice(0, 8) + "01"; // 보고 있는 달의 1일
 let planForm: string | null = null; // "new" 또는 수정 중인 계획 id
@@ -111,6 +114,23 @@ function syncReviews() {
   save();
 }
 
+function focusInput() {
+  if (!focusAdd) return;
+  focusAdd = false;
+  (document.querySelector(".pop input:not([type=date]), .dlg input") as HTMLElement | null)?.focus();
+}
+
+// 점수 입력, 수능 날짜: 가운데 작은 상자
+function dialogHtml() {
+  const dg = dialog;
+  if (!dg) return "";
+  if (dg.kind === "exam")
+    return `<div class="backdrop"><form class="dlg" id="dlgform"><h3>수능 날짜</h3><input type="date" name="d" value="${S.exam}" required /><div class="r"><button type="button" data-dclose="1">취소</button><button>저장</button></div></form></div>`;
+  const t = (S.tasks[date] ?? []).find((x) => x.id === dg.id);
+  if (!t) return "";
+  return `<div class="backdrop"><form class="dlg" id="dlgform"><h3>${esc(t.text)}</h3><div class="r"><input name="sc" type="number" step="any" inputmode="decimal" placeholder="점수" value="${t.score ?? ""}" /><span>/</span><input name="mx" type="number" step="any" inputmode="decimal" placeholder="만점" value="${t.max ?? 100}" /></div><div class="r"><button type="button" data-dclear="1">지우기</button><button type="button" data-dclose="1">취소</button><button>저장</button></div></form></div>`;
+}
+
 const tabs = () => `<nav class="tabs"><button data-view="planner" class="${view === "planner" ? "on" : ""}">플래너</button><button data-view="cal" class="${view === "cal" ? "on" : ""}">캘린더</button><button data-view="plan" class="${view === "plan" ? "on" : ""}">커리큘럼</button><button data-view="set" class="${view === "set" ? "on" : ""}">설정</button></nav>`;
 const dayIdx = (a: string, b: string) => Math.round((parse(b).getTime() - parse(a).getTime()) / 864e5);
 const DAYW = 26;
@@ -152,13 +172,12 @@ function renderPlan() {
 
   const pf = planForm && planForm !== "new" ? S.plans.find((p) => p.id === planForm) : undefined;
   const form = planForm
-    ? `<form id="planform"><select name="s">${S.subjects.map((s) => `<option value="${s.id}"${pf?.subject === s.id ? " selected" : ""}>${s.name}</option>`).join("")}</select><input name="n" placeholder="계획 이름 (예: 기출 3회독)" value="${esc(pf?.name ?? "")}" autocomplete="off" /><input type="date" name="a" value="${pf?.start ?? today}" /><input type="date" name="z" value="${pf?.end ?? shift(today, 14)}" /><button>저장</button>${pf ? `<button type="button" class="dg" data-plandel="${pf.id}">삭제</button>` : ""}</form>`
+    ? `<div class="pop"><form id="planform"><select name="s">${S.subjects.map((s) => `<option value="${s.id}"${pf?.subject === s.id ? " selected" : ""}>${s.name}</option>`).join("")}</select><input name="n" placeholder="계획 이름 (예: 기출 3회독)" value="${esc(pf?.name ?? "")}" autocomplete="off" /><input type="date" name="a" value="${pf?.start ?? today}" /><input type="date" name="z" value="${pf?.end ?? shift(today, 14)}" /><button>저장</button>${pf ? `<button type="button" class="dg" data-plandel="${pf.id}">삭제</button>` : ""}</form></div>`
     : "";
 
   document.getElementById("app")!.innerHTML = `${tabs()}
     <div class="top"><div><div class="label">CURRICULUM</div><div class="date"><span class="wd" style="font-size:clamp(28px,5vw,40px);color:var(--fg)">커리큘럼</span></div></div>
-      <div class="acts"><button class="pill" id="goto-today">오늘로</button><button class="add" id="addplan">${planForm ? "×" : "+"}</button></div></div>
-    <div style="margin-top:18px">${form}</div>
+      <div class="acts"><button class="pill" id="goto-today">오늘로</button><button class="add" id="addplan">${planForm ? "×" : "+"}</button>${form}</div></div>
     <div class="tl" id="tl"><div class="tlin" style="width:${n * DAYW}px">
       <div class="tlhead"><div class="tle"><span class="ev today" style="left:${x(today) + DAYW / 2}px">오늘</span><span class="ev exam" style="left:${x(S.exam) + DAYW / 2}px">수능 ${examLabel}</span></div><div class="tlm">${months}</div><div class="tld">${days}</div></div>
       ${rows}${lines}
@@ -169,6 +188,7 @@ function renderPlan() {
   const tl = document.getElementById("tl")!;
   tl.scrollLeft = tlLeft ?? Math.max(0, x(today) - tl.clientWidth * 0.3);
   tlLeft = tl.scrollLeft;
+  focusInput();
 }
 
 // 캘린더: 월간 달력. 날짜 칸에 공부 시간, 할 일 달성률, 공부한 과목 점, 모의고사 점수를 보여준다.
@@ -245,8 +265,8 @@ function render() {
   let rows = group(false) + (rv ? `<div class="label rvh">REVIEW</div>${rv}` : "");
   if (!tasks.length && !adding) rows = `<p class="empty">오늘 할 일이 없어요.<br>오른쪽 위 + 로 추가해보세요.</p>`;
 
-  const form = adding
-    ? `<form id="addform"><select name="s">${S.subjects.map((s) => `<option value="${s.id}">${s.name}</option>`).join("")}</select><select name="y">${PICK.map((k) => `<option value="${k}">${TYPES[k].name}</option>`).join("")}</select><input name="t" placeholder="할 일" autocomplete="off" /><button>추가</button></form>`
+  const pop = adding
+    ? `<div class="pop"><form id="addform"><select name="s">${S.subjects.map((s) => `<option value="${s.id}">${s.name}</option>`).join("")}</select><select name="y">${PICK.map((k) => `<option value="${k}">${TYPES[k].name}</option>`).join("")}</select><input name="t" placeholder="할 일" autocomplete="off" /><button>추가</button></form></div>`
     : "";
 
   const tools =
@@ -254,6 +274,7 @@ function render() {
     `<button class="tool${tool === "erase" ? " on" : ""}" data-tool="erase">지우개</button>` +
     `<button class="tool mode${paintMode ? " on" : ""}" id="pm">드래그 칠하기 ${paintMode ? "ON" : "OFF"}</button>`;
 
+  const toolsBox = painting ? `<div class="tools box">${tools}<button class="tool" id="pt">완료</button></div>` : "";
   const total = countCells();
   const bar = S.subjects.map((s) => ({ s, n: countCells(s.id) })).filter((x) => x.n)
     .map((x) => `<i style="flex:${x.n};background:${x.s.color}"></i>`).join("");
@@ -282,18 +303,18 @@ function render() {
     </div>
     <div class="main">
       <div class="left">
-        <div class="head"><div class="label">TASKS</div><div class="acts"><button class="pill${editing ? " on" : ""}" id="edit">편집</button><button class="add" id="add">${adding ? "×" : "+"}</button></div></div>
-        ${form}${rows}
+        <div class="head"><div class="label">TASKS</div><div class="acts"><button class="pill${editing ? " on" : ""}" id="edit">편집</button><button class="add" id="add">${adding ? "×" : "+"}</button>${pop}</div></div>
+        ${rows}
       </div>
       <div class="right">
         <div class="total"><div><div class="label">TOTAL TIME</div><b>${fmt(total)}</b></div><div class="bar">${bar}</div></div>
-        <div class="label">TIMETABLE</div>
-        <div class="tools">${tools}</div>
-        <div class="ttwrap" id="ttwrap"><div class="tt${paintMode ? " paint" : ""}" id="tt">${grid}</div></div>
+        <div class="head"><div class="label">TIMETABLE</div><button class="pill${painting ? " on" : ""}" id="pt" aria-label="칠하기">${TYPES.problem.icon}</button></div>
+        ${toolsBox}
+        <div class="ttwrap" id="ttwrap"><div class="tt${painting && paintMode ? " paint" : ""}" id="tt">${grid}</div></div>
       </div>
-    </div>`;
+    </div>${dialogHtml()}`;
   scrollTo(0, keep);
-  if (adding) (document.querySelector("#addform input") as HTMLInputElement).focus();
+  focusInput();
 }
 
 function paintCell(el: Element | null) {
@@ -338,6 +359,9 @@ addEventListener("pointerup", () => { pan = null; setTimeout(() => (panMoved = f
 app.addEventListener("click", (e) => {
   const el = e.target as HTMLElement;
   const b = el.closest("button") as HTMLElement | null;
+  let closed = false; // 팝업 바깥을 눌러 닫은 경우도 다시 그려야 한다
+  if (adding && !el.closest(".pop,#add")) { adding = false; closed = true; }
+  if (planForm && !el.closest(".pop,#addplan,[data-plan]")) { planForm = null; closed = true; }
   if (b?.dataset.view) { view = b.dataset.view as typeof view; }
   else if (b?.id === "sadd") S.subjects.push({ id: uid(), name: "새 과목", color: ["#f08a4b", "#2fa8e0", "#5cb85c", "#e07ad1", "#6fd0c4", "#7fb3e8", "#e8c34a", "#9b8cf0"][S.subjects.length % 8] });
   else if (b?.dataset.sdel) {
@@ -355,7 +379,7 @@ app.addEventListener("click", (e) => {
   else if (b?.dataset.cal) { const f = parse(calMonth); calMonth = iso(new Date(f.getFullYear(), f.getMonth() + +b.dataset.cal, 1)); }
   else if (b?.id === "cal-today") calMonth = iso(new Date()).slice(0, 8) + "01";
   else if (b?.dataset.d) { date = b.dataset.d; view = "planner"; }
-  else if (b?.id === "addplan") planForm = planForm ? null : "new";
+  else if (b?.id === "addplan") { planForm = planForm ? null : "new"; focusAdd = !!planForm; }
   else if (b?.id === "goto-today") tlLeft = null;
   else if (b?.dataset.plan) { if (panMoved) return; planForm = b.dataset.plan; }
   else if (b?.dataset.plandel) { S.plans = S.plans.filter((p) => p.id !== b.dataset.plandel); planForm = null; }
@@ -375,22 +399,19 @@ app.addEventListener("click", (e) => {
     if (t.rkey) S.dismissed.push(`${date}|${t.rkey}`);
     if (t.next) { const n = S.tasks[shift(date, 1)] ?? []; const j = n.findIndex((x) => x.id === t.next); if (j >= 0) n.splice(j, 1); }
   } else if (b?.id === "edit") editing = !editing;
-  else if (b?.dataset.score) {
-    const t = (S.tasks[date] ?? []).find((x) => x.id === b.dataset.score)!;
-    const v = prompt("점수 / 만점 (예: 72/100, 비우면 삭제)", t.score == null ? "/100" : `${t.score}/${t.max ?? 100}`);
-    if (v === null) return;
-    const m = v.match(/^\s*(\d+(?:\.\d+)?)\s*(?:\/\s*(\d+(?:\.\d+)?))?\s*$/);
-    if (m) { t.score = +m[1]; t.max = m[2] ? +m[2] : t.max ?? 100; } else if (!v.trim() || v.trim() === "/100") t.score = undefined;
-  } else if (b?.dataset.task) cycle(b.dataset.task);
+  else if (b?.dataset.score) { dialog = { kind: "score", id: b.dataset.score }; focusAdd = true; }
+  else if (b?.dataset.task) cycle(b.dataset.task);
   else if (b?.dataset.day) date = shift(date, +b.dataset.day);
   else if (b?.dataset.tool) { tool = b.dataset.tool; }
   else if (b?.id === "pm") paintMode = !paintMode;
-  else if (b?.id === "add") adding = !adding;
-  else if (el.closest("#dday")) {
-    const v = prompt("수능 날짜 (YYYY-MM-DD)", S.exam);
-    if (v && /^\d{4}-\d{2}-\d{2}$/.test(v)) S.exam = v;
-  } else if (el.classList.contains("cell") && !paintMode) { paintCell(el); }
-  else return;
+  else if (b?.id === "add") { adding = !adding; focusAdd = adding; }
+  else if (b?.id === "pt") painting = !painting;
+  else if (b?.dataset.dclose) dialog = null;
+  else if (el.classList.contains("backdrop")) dialog = null;
+  else if (b?.dataset.dclear) { const dg = dialog; if (dg?.kind === "score") { const t = (S.tasks[date] ?? []).find((x) => x.id === dg.id); if (t) t.score = undefined; } dialog = null; }
+  else if (el.closest("#dday")) dialog = { kind: "exam" };
+  else if (el.classList.contains("cell") && painting && !paintMode) { paintCell(el); }
+  else if (!closed) return;
   save(); render();
 });
 
@@ -413,6 +434,18 @@ app.addEventListener("change", async (e) => {
 app.addEventListener("submit", (e) => {
   e.preventDefault();
   const f = e.target as HTMLFormElement;
+  if (f.id === "dlgform") {
+    const dg = dialog;
+    const v = (k: string) => (f.elements.namedItem(k) as HTMLInputElement).value;
+    if (dg?.kind === "exam") { if (v("d")) S.exam = v("d"); }
+    else if (dg?.kind === "score") {
+      const t = (S.tasks[date] ?? []).find((x) => x.id === dg.id);
+      if (t) { t.score = v("sc") === "" ? undefined : parseFloat(v("sc")); t.max = parseFloat(v("mx")) || 100; }
+    }
+    dialog = null;
+    save(); render();
+    return;
+  }
   if (f.id === "repform") {
     const text = (f.elements.namedItem("t") as HTMLInputElement).value.trim();
     const days = [...f.querySelectorAll<HTMLInputElement>('input[name="d"]:checked')].map((c) => +c.value);
@@ -435,11 +468,12 @@ app.addEventListener("submit", (e) => {
   }
   const text = (f.elements.namedItem("t") as HTMLInputElement).value.trim();
   if (text) (S.tasks[date] ??= []).push({ id: uid(), subject: (f.elements.namedItem("s") as HTMLSelectElement).value, text, status: 0, type: (f.elements.namedItem("y") as HTMLSelectElement).value });
+  focusAdd = true; // 연속으로 추가할 수 있게 입력칸 유지
   save(); render();
 });
 
 app.addEventListener("pointerdown", (e) => {
-  if (!paintMode || !(e.target as HTMLElement).classList.contains("cell")) return;
+  if (!painting || !paintMode || !(e.target as HTMLElement).classList.contains("cell")) return;
   dragging = true;
   paintCell(e.target as Element);
 });
