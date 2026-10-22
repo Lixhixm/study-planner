@@ -11,6 +11,7 @@ type State = {
   showExams: boolean;
   memos: Record<string, string>; // date -> 하루 메모
   shotMemo: boolean; // 공유 이미지에 메모 포함
+  timer?: { subject: string; start: number; task?: string; label: string }; // 실행 중인 공부 타이머 (시작 시각만 저장)
   subjects: { id: string; name: string; color: string }[];
   tasks: Record<string, Task[]>; // date -> tasks
   paint: Record<string, string>; // "date|h|c" -> subject id
@@ -81,6 +82,7 @@ let paintMode = false;
 let adding = false;
 let editing = false;
 let painting = false; // 시간표 칠하기 도구 상자 표시 여부
+let startPop = false; // 과목을 골라 타이머를 시작하는 팝업
 let focusAdd = false; // 팝업을 막 열었거나 연속 추가할 때만 입력칸에 포커스 (다른 조작 때 키보드가 뜨지 않게)
 let dialog: { kind: "score"; id: string } | { kind: "shot" } | { kind: "memo" } | null = null;
 let shotUrl = "";
@@ -154,6 +156,37 @@ function syncReviews() {
   }
   save();
 }
+
+const PLAY = `<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>`;
+const STOP = `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>`;
+const SLOT = 10 * 60000;
+// 시작~끝 사이에 5분 이상 걸친 10분 칸을 [칸 키, 과목] 로 돌려준다
+function sessionCells(t: { subject: string; start: number }, end: number): [string, string][] {
+  const out: [string, string][] = [];
+  for (let s0 = Math.floor(t.start / SLOT) * SLOT; s0 < end; s0 += SLOT) {
+    if (Math.min(end, s0 + SLOT) - Math.max(t.start, s0) >= 5 * 60000) {
+      const d = new Date(s0);
+      out.push([`${iso(d)}|${d.getHours()}|${Math.floor(d.getMinutes() / 10)}`, t.subject]);
+    }
+  }
+  return out;
+}
+function stopTimer() {
+  const t = S.timer;
+  if (!t) return;
+  S.timer = undefined;
+  if (Date.now() - t.start > 8 * 3600000 && !confirm("8시간 넘게 켜져 있었어요. 그대로 기록할까요?")) { save(); return; }
+  const cells = sessionCells(t, Date.now());
+  for (const [k, sid] of cells) S.paint[k] = sid;
+  save();
+  if (!cells.length) alert("5분 미만이라 시간표에 칠해지지 않았어요.");
+}
+function startTimer(subject: string, label: string, task?: string) {
+  if (S.timer) stopTimer();
+  S.timer = { subject, start: Date.now(), task, label };
+  save();
+}
+const playBtn = (id: string) => `<button class="play${S.timer?.task === id ? " on" : ""}" data-play="${id}" aria-label="타이머">${S.timer?.task === id ? STOP : PLAY}</button>`;
 
 function focusInput() {
   if (!focusAdd) return;
@@ -316,7 +349,7 @@ function render() {
     const mine = tasks.filter((t) => t.subject === s.id && (t.type === "review") === rev);
     if (!mine.length) continue;
     rows += `<section class="grp" style="--c:${s.color}"><header><span class="sn">${s.name}</span><span class="st">${rev ? "" : fmt(countCells(s.id))}</span></header>` +
-      mine.map((t) => `<div class="task s${t.status}"><span class="ty" title="${TYPES[t.icon ?? t.type ?? "etc"].name}">${TYPES[t.icon ?? t.type ?? "etc"].icon}</span><span class="text">${esc(t.text)}${t.detail ? `<small class="detail">${esc(t.detail)}</small>` : ""}</span>${editing ? `<button class="del" data-del="${t.id}" aria-label="삭제">${DEL}</button>` : ""}${t.type === "exam" ? `<button class="score" data-score="${t.id}">${t.score == null ? "점수" : `${t.score}<small>/${t.max ?? 100}</small>`}</button>` : ""}<button class="mark m${t.status}" data-task="${t.id}">${MARK_UI[t.status]}</button></div>`).join("") +
+      mine.map((t) => `<div class="task s${t.status}"><span class="ty" title="${TYPES[t.icon ?? t.type ?? "etc"].name}">${TYPES[t.icon ?? t.type ?? "etc"].icon}</span><span class="text">${esc(t.text)}${t.detail ? `<small class="detail">${esc(t.detail)}</small>` : ""}</span>${editing ? `<button class="del" data-del="${t.id}" aria-label="삭제">${DEL}</button>` : ""}${t.type === "exam" ? `<button class="score" data-score="${t.id}">${t.score == null ? "점수" : `${t.score}<small>/${t.max ?? 100}</small>`}</button>` : ""}${playBtn(t.id)}<button class="mark m${t.status}" data-task="${t.id}">${MARK_UI[t.status]}</button></div>`).join("") +
       `</section>`;
   }
   return rows;
@@ -339,12 +372,15 @@ function render() {
   const bar = S.subjects.map((s) => ({ s, n: countCells(s.id) })).filter((x) => x.n)
     .map((x) => `<i style="flex:${x.n};background:${x.s.color}"></i>`).join("");
 
+  const live = new Map(S.timer ? sessionCells(S.timer, Date.now()) : []); // 진행 중인 기록 미리보기
   let grid = "";
   for (let h = 0; h < 24; h++) {
     grid += `<div class="hour${h % 3 === 0 ? " major" : ""}">${h}</div>`;
     for (let c = 0; c < 6; c++) {
-      const v = S.paint[`${date}|${h}|${c}`];
-      grid += `<div class="cell${h % 3 === 2 ? " e3" : ""}" data-h="${h}" data-c="${c}"${v ? ` style="background:${subj(v).color}"` : ""}></div>`;
+      const key = `${date}|${h}|${c}`;
+      const lv = live.get(key);
+      const v = lv ?? S.paint[key];
+      grid += `<div class="cell${h % 3 === 2 ? " e3" : ""}" data-h="${h}" data-c="${c}"${v ? ` style="background:${subj(v).color}${lv ? ";opacity:.55" : ""}"` : ""}></div>`;
     }
   }
 
@@ -370,7 +406,7 @@ function render() {
       <div class="right">
         <div class="head"><div class="label">TOTAL TIME</div></div>
         <div class="total"><b>${fmt(total)}</b><div class="bar">${bar}</div></div>
-        <div class="head"><div class="label">TIMETABLE</div><button class="add" id="pt" aria-label="칠하기">${painting ? "×" : TYPES.problem.icon}</button></div>
+        <div class="head"><div class="label">TIMETABLE</div><div class="acts"><button class="add" id="tstart" aria-label="타이머 시작">${PLAY}</button><button class="add" id="pt" aria-label="칠하기">${painting ? "×" : TYPES.problem.icon}</button>${startPop ? `<div class="pop"><div class="label" style="margin-bottom:8px">어떤 과목을 시작할까요?</div><div class="tools" style="position:static;padding:0">${S.subjects.map((sj) => `<button class="tool" data-tsub="${sj.id}" style="--c:${sj.color}"><i></i>${sj.name}</button>`).join("")}</div></div>` : ""}</div></div>
         ${toolsBox}
         <div class="ttwrap" id="ttwrap"><div class="tt${painting && paintMode ? " paint" : ""}" id="tt">${grid}</div></div>
       </div>
@@ -410,7 +446,7 @@ async function capture() {
   const root = document.createElement("div");
   root.className = "shotroot";
   root.innerHTML = document.getElementById("app")!.innerHTML;
-  root.querySelectorAll(`.tabrow, .acts, .pop, .tools, #pt, .backdrop${S.shotMemo ? "" : ", .memosec"}`).forEach((n) => n.remove());
+  root.querySelectorAll(`.tabrow, .acts, .pop, .tools, #pt, .play, .backdrop${S.shotMemo ? "" : ", .memosec"}`).forEach((n) => n.remove());
   document.body.appendChild(root);
   try {
     // html2canvas가 인라인 SVG를 일부 잘라 그려서, 아이콘은 이미지로 바꿔 넣는다
@@ -468,9 +504,18 @@ app.addEventListener("click", (e) => {
   const b = el.closest("button") as HTMLElement | null;
   let closed = false; // 팝업 바깥을 눌러 닫은 경우도 다시 그려야 한다
   if (adding && !el.closest(".pop,#add")) { adding = false; closed = true; }
+  if (startPop && !el.closest(".pop,#tstart")) { startPop = false; closed = true; }
   if (planForm && !el.closest(".pop,#addplan,[data-plan]")) { planForm = null; closed = true; }
   if (b?.id === "shot") { void capture(); return; }
   else if (b?.dataset.dshare) { void shareShot(); return; }
+  else if (b?.dataset.play) {
+    const t = (S.tasks[date] ?? []).find((x) => x.id === b.dataset.play);
+    if (S.timer?.task === b.dataset.play) stopTimer();
+    else if (t) startTimer(t.subject, t.text, t.id);
+    renderTimer();
+  }
+  else if (b?.id === "tstart") startPop = !startPop;
+  else if (b?.dataset.tsub) { startTimer(b.dataset.tsub, subj(b.dataset.tsub).name); startPop = false; renderTimer(); }
   else if (b?.dataset.view) { view = b.dataset.view as typeof view; }
   else if (b?.id === "sadd") S.subjects.push({ id: uid(), name: "새 과목", color: ["#f08a4b", "#2fa8e0", "#5cb85c", "#e07ad1", "#6fd0c4", "#7fb3e8", "#e8c34a", "#9b8cf0"][S.subjects.length % 8] });
   else if (b?.dataset.sdel) {
@@ -483,6 +528,7 @@ app.addEventListener("click", (e) => {
     S.plans = S.plans.filter((x) => x.subject !== id);
     S.repeats = S.repeats.filter((x) => x.subject !== id);
     if (tool === id) tool = S.subjects[0].id;
+    if (S.timer?.subject === id) S.timer = undefined;
   }
   else if (b?.dataset.rdel) S.repeats = S.repeats.filter((r) => r.id !== b.dataset.rdel);
   else if (b?.dataset.cal) { const f = parse(calMonth); calMonth = iso(new Date(f.getFullYear(), f.getMonth() + +b.dataset.cal, 1)); }
@@ -546,6 +592,7 @@ app.addEventListener("change", async (e) => {
     if (typeof d.tasks !== "object" || typeof d.paint !== "object" || !Array.isArray(d.subjects)) throw 0;
     if (!confirm("지금 앱의 모든 기록이 백업 파일 내용으로 바뀝니다. 계속할까요?")) return;
     S = load(d);
+    S.timer = undefined; // 다른 기기의 실행 중 타이머는 가져오지 않는다
     applyTheme();
     save(); render();
   } catch { alert("백업 파일을 읽을 수 없어요."); }
@@ -607,6 +654,29 @@ const stop = () => { if (dragging) { dragging = false; save(); render(); } };
 addEventListener("pointerup", stop);
 addEventListener("pointercancel", stop);
 
+// 화면 아래에 떠 있는 타이머 막대 (모든 탭에서 보이고, 레이아웃을 밀지 않는다)
+const tf = document.createElement("div");
+tf.id = "tf";
+document.body.appendChild(tf);
+let tfSig = "";
+const hms = (ms: number) => { const sec = Math.floor(ms / 1000); return [Math.floor(sec / 3600), Math.floor(sec / 60) % 60, sec % 60].map((n) => String(n).padStart(2, "0")).join(":"); };
+function renderTimer() {
+  const t = S.timer;
+  const sig = t ? `${t.start}|${t.label}` : "";
+  if (sig !== tfSig) {
+    tfSig = sig;
+    tf.innerHTML = t ? `<div class="tfi"><i style="background:${S.subjects.find((x) => x.id === t.subject)?.color ?? "#888"}"></i><span class="tfn">${esc(t.label)}</span><b id="tft"></b><button data-tmstop="1" aria-label="정지">${STOP}</button></div>` : "";
+  }
+  const el = document.getElementById("tft");
+  if (t && el) el.textContent = hms(Date.now() - t.start);
+}
+tf.addEventListener("click", (e) => { if ((e.target as HTMLElement).closest("[data-tmstop]")) { stopTimer(); renderTimer(); render(); } });
+let tick = 0;
+setInterval(() => {
+  renderTimer();
+  if (S.timer && ++tick % 60 === 0 && view === "planner" && !adding && !dialog && !painting && !startPop) render(); // 1분마다 미리보기 칸 갱신
+}, 1000);
+renderTimer();
 render();
 
 navigator.storage?.persist?.().catch(() => {}); // 브라우저가 저장소를 임의로 지우지 않도록 요청

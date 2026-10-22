@@ -6,7 +6,7 @@
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 body { margin: 0; background: var(--bg); color: var(--fg); font-family: -apple-system, "SF Pro Display", "Apple SD Gothic Neo", sans-serif; -webkit-user-select: none; user-select: none; }
-#app { max-width: 1280px; margin: 0 auto; padding: max(env(safe-area-inset-top), 20px) 28px 40px; }
+#app { max-width: 1280px; margin: 0 auto; padding: max(env(safe-area-inset-top), 20px) 28px 96px; }
 button { font: inherit; color: inherit; }
 .label { font-size: 12px; font-weight: 600; letter-spacing: .14em; color: var(--dim); }
 
@@ -218,3 +218,14 @@ form button { color: #fff; }
 .dlg textarea { width: 100%; min-height: 170px; background: var(--bg); color: var(--fg); border: 1px solid var(--line2); border-radius: 10px; padding: 12px; font-size: 16px; line-height: 1.5; font-family: inherit; resize: vertical; -webkit-user-select: text; user-select: text; }
 .cd .mi { color: var(--dim); display: flex; }
 .cd .mi svg { width: 12px; height: 12px; }
+.play { width: 36px; height: 44px; flex: none; background: none; border: 0; color: var(--dim); cursor: pointer; }
+.play svg { display: block; margin: auto; }
+.play.on { color: var(--accent); }
+#tf { position: fixed; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 40; }
+.tfi { display: flex; align-items: center; gap: 12px; background: var(--card); border: 1px solid var(--line2); border-radius: 999px; padding: 8px 8px 8px 16px; box-shadow: 0 12px 36px rgba(0, 0, 0, .55); max-width: 92vw; }
+.tfi i { width: 10px; height: 10px; border-radius: 50%; flex: none; animation: pulse 1.6s infinite; }
+.tfn { font-size: 15px; font-weight: 600; max-width: 38vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tfi b { font-size: 18px; font-variant-numeric: tabular-nums; }
+.tfi button { width: 40px; height: 40px; border-radius: 50%; border: 0; background: var(--accent); color: #fff; cursor: pointer; }
+.tfi button svg { display: block; margin: auto; }
+@keyframes pulse { 50% { opacity: .3; } }
