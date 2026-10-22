@@ -82,6 +82,7 @@ let paintMode = false;
 let adding = false;
 let editing = false;
 let painting = false; // 시간표 칠하기 도구 상자 표시 여부
+let startPop = false; // 과목을 골라 타이머를 시작하는 팝업
 let focusAdd = false; // 팝업을 막 열었거나 연속 추가할 때만 입력칸에 포커스 (다른 조작 때 키보드가 뜨지 않게)
 let dialog: { kind: "score"; id: string } | { kind: "shot" } | { kind: "memo" } | null = null;
 let shotUrl = "";
@@ -185,7 +186,6 @@ function startTimer(subject: string, label: string, task?: string) {
   S.timer = { subject, start: Date.now(), task, label };
   save();
 }
-const playBtn = (id: string) => `<button class="play${S.timer?.task === id ? " on" : ""}" data-play="${id}" aria-label="타이머">${S.timer?.task === id ? STOP : PLAY}</button>`;
 
 function focusInput() {
   if (!focusAdd) return;
@@ -348,7 +348,7 @@ function render() {
     const mine = tasks.filter((t) => t.subject === s.id && (t.type === "review") === rev);
     if (!mine.length) continue;
     rows += `<section class="grp" style="--c:${s.color}"><header><span class="sn">${s.name}</span><span class="st">${rev ? "" : fmt(countCells(s.id))}</span></header>` +
-      mine.map((t) => `<div class="task s${t.status}"><span class="ty" title="${TYPES[t.icon ?? t.type ?? "etc"].name}">${TYPES[t.icon ?? t.type ?? "etc"].icon}</span><span class="text">${esc(t.text)}${t.detail ? `<small class="detail">${esc(t.detail)}</small>` : ""}</span>${editing ? `<button class="del" data-del="${t.id}" aria-label="삭제">${DEL}</button>` : ""}${t.type === "exam" ? `<button class="score" data-score="${t.id}">${t.score == null ? "점수" : `${t.score}<small>/${t.max ?? 100}</small>`}</button>` : ""}${playBtn(t.id)}<button class="mark m${t.status}" data-task="${t.id}">${MARK_UI[t.status]}</button></div>`).join("") +
+      mine.map((t) => `<div class="task s${t.status}"><span class="ty" title="${TYPES[t.icon ?? t.type ?? "etc"].name}">${TYPES[t.icon ?? t.type ?? "etc"].icon}</span><span class="text">${esc(t.text)}${t.detail ? `<small class="detail">${esc(t.detail)}</small>` : ""}</span>${editing ? `<button class="del" data-del="${t.id}" aria-label="삭제">${DEL}</button>` : ""}${t.type === "exam" ? `<button class="score" data-score="${t.id}">${t.score == null ? "점수" : `${t.score}<small>/${t.max ?? 100}</small>`}</button>` : ""}<button class="mark m${t.status}" data-task="${t.id}">${MARK_UI[t.status]}</button></div>`).join("") +
       `</section>`;
   }
   return rows;
@@ -403,7 +403,7 @@ function render() {
         <div class="memosec"><div class="head"><div class="label">MEMO</div></div><button class="memo" data-memo="1">${S.memos[date] ? esc(S.memos[date]) : `<span class="ph">메모를 남겨보세요</span>`}</button></div>
       </div>
       <div class="right">
-        <div class="head"><div class="label">TOTAL TIME</div></div>
+        <div class="head"><div class="label">TOTAL TIME</div><div class="acts"><button class="add" id="tstart" aria-label="${S.timer ? "타이머 정지" : "타이머 시작"}">${S.timer ? STOP : PLAY}</button>${startPop ? `<div class="pop"><div class="label" style="margin-bottom:8px">어떤 과목을 시작할까요?</div><div class="tools" style="position:static;padding:0">${S.subjects.map((sj) => `<button class="tool" data-tsub="${sj.id}" style="--c:${sj.color}"><i></i>${sj.name}</button>`).join("")}</div></div>` : ""}</div></div>
         <div class="total"><b>${fmt(total)}</b><div class="bar">${bar}</div></div>
         <div class="head"><div class="label">TIMETABLE</div><button class="add" id="pt" aria-label="칠하기">${painting ? "×" : TYPES.problem.icon}</button></div>
         ${toolsBox}
@@ -445,7 +445,7 @@ async function capture() {
   const root = document.createElement("div");
   root.className = "shotroot";
   root.innerHTML = document.getElementById("app")!.innerHTML;
-  root.querySelectorAll(`.tabrow, .acts, .pop, .tools, #pt, .play, .backdrop${S.shotMemo ? "" : ", .memosec"}`).forEach((n) => n.remove());
+  root.querySelectorAll(`.tabrow, .acts, .pop, .tools, #pt, .backdrop${S.shotMemo ? "" : ", .memosec"}`).forEach((n) => n.remove());
   document.body.appendChild(root);
   try {
     // html2canvas가 인라인 SVG를 일부 잘라 그려서, 아이콘은 이미지로 바꿔 넣는다
@@ -503,15 +503,12 @@ app.addEventListener("click", (e) => {
   const b = el.closest("button") as HTMLElement | null;
   let closed = false; // 팝업 바깥을 눌러 닫은 경우도 다시 그려야 한다
   if (adding && !el.closest(".pop,#add")) { adding = false; closed = true; }
+  if (startPop && !el.closest(".pop,#tstart")) { startPop = false; closed = true; }
   if (planForm && !el.closest(".pop,#addplan,[data-plan]")) { planForm = null; closed = true; }
   if (b?.id === "shot") { void capture(); return; }
   else if (b?.dataset.dshare) { void shareShot(); return; }
-  else if (b?.dataset.play) {
-    const t = (S.tasks[date] ?? []).find((x) => x.id === b.dataset.play);
-    if (S.timer?.task === b.dataset.play) stopTimer();
-    else if (t) startTimer(t.subject, t.text, t.id);
-    renderTimer();
-  }
+  else if (b?.id === "tstart") { if (S.timer) { stopTimer(); renderTimer(); } else startPop = !startPop; }
+  else if (b?.dataset.tsub) { startTimer(b.dataset.tsub, subj(b.dataset.tsub).name); startPop = false; renderTimer(); }
   else if (b?.dataset.view) { view = b.dataset.view as typeof view; }
   else if (b?.id === "sadd") S.subjects.push({ id: uid(), name: "새 과목", color: ["#f08a4b", "#2fa8e0", "#5cb85c", "#e07ad1", "#6fd0c4", "#7fb3e8", "#e8c34a", "#9b8cf0"][S.subjects.length % 8] });
   else if (b?.dataset.sdel) {
@@ -670,7 +667,7 @@ tf.addEventListener("click", (e) => { if ((e.target as HTMLElement).closest("[da
 let tick = 0;
 setInterval(() => {
   renderTimer();
-  if (S.timer && ++tick % 60 === 0 && view === "planner" && !adding && !dialog && !painting) render(); // 1분마다 미리보기 칸 갱신
+  if (S.timer && ++tick % 60 === 0 && view === "planner" && !adding && !dialog && !painting && !startPop) render(); // 1분마다 미리보기 칸 갱신
 }, 1000);
 renderTimer();
 render();
