@@ -82,7 +82,6 @@ let paintMode = false;
 let adding = false;
 let editing = false;
 let painting = false; // 시간표 칠하기 도구 상자 표시 여부
-let startPop = false; // 과목을 골라 타이머를 시작하는 팝업
 let focusAdd = false; // 팝업을 막 열었거나 연속 추가할 때만 입력칸에 포커스 (다른 조작 때 키보드가 뜨지 않게)
 let dialog: { kind: "score"; id: string } | { kind: "shot" } | { kind: "memo" } | null = null;
 let shotUrl = "";
@@ -406,7 +405,7 @@ function render() {
       <div class="right">
         <div class="head"><div class="label">TOTAL TIME</div></div>
         <div class="total"><b>${fmt(total)}</b><div class="bar">${bar}</div></div>
-        <div class="head"><div class="label">TIMETABLE</div><div class="acts"><button class="add" id="tstart" aria-label="타이머 시작">${PLAY}</button><button class="add" id="pt" aria-label="칠하기">${painting ? "×" : TYPES.problem.icon}</button>${startPop ? `<div class="pop"><div class="label" style="margin-bottom:8px">어떤 과목을 시작할까요?</div><div class="tools" style="position:static;padding:0">${S.subjects.map((sj) => `<button class="tool" data-tsub="${sj.id}" style="--c:${sj.color}"><i></i>${sj.name}</button>`).join("")}</div></div>` : ""}</div></div>
+        <div class="head"><div class="label">TIMETABLE</div><button class="add" id="pt" aria-label="칠하기">${painting ? "×" : TYPES.problem.icon}</button></div>
         ${toolsBox}
         <div class="ttwrap" id="ttwrap"><div class="tt${painting && paintMode ? " paint" : ""}" id="tt">${grid}</div></div>
       </div>
@@ -504,7 +503,6 @@ app.addEventListener("click", (e) => {
   const b = el.closest("button") as HTMLElement | null;
   let closed = false; // 팝업 바깥을 눌러 닫은 경우도 다시 그려야 한다
   if (adding && !el.closest(".pop,#add")) { adding = false; closed = true; }
-  if (startPop && !el.closest(".pop,#tstart")) { startPop = false; closed = true; }
   if (planForm && !el.closest(".pop,#addplan,[data-plan]")) { planForm = null; closed = true; }
   if (b?.id === "shot") { void capture(); return; }
   else if (b?.dataset.dshare) { void shareShot(); return; }
@@ -514,8 +512,6 @@ app.addEventListener("click", (e) => {
     else if (t) startTimer(t.subject, t.text, t.id);
     renderTimer();
   }
-  else if (b?.id === "tstart") startPop = !startPop;
-  else if (b?.dataset.tsub) { startTimer(b.dataset.tsub, subj(b.dataset.tsub).name); startPop = false; renderTimer(); }
   else if (b?.dataset.view) { view = b.dataset.view as typeof view; }
   else if (b?.id === "sadd") S.subjects.push({ id: uid(), name: "새 과목", color: ["#f08a4b", "#2fa8e0", "#5cb85c", "#e07ad1", "#6fd0c4", "#7fb3e8", "#e8c34a", "#9b8cf0"][S.subjects.length % 8] });
   else if (b?.dataset.sdel) {
@@ -674,7 +670,7 @@ tf.addEventListener("click", (e) => { if ((e.target as HTMLElement).closest("[da
 let tick = 0;
 setInterval(() => {
   renderTimer();
-  if (S.timer && ++tick % 60 === 0 && view === "planner" && !adding && !dialog && !painting && !startPop) render(); // 1분마다 미리보기 칸 갱신
+  if (S.timer && ++tick % 60 === 0 && view === "planner" && !adding && !dialog && !painting) render(); // 1분마다 미리보기 칸 갱신
 }, 1000);
 renderTimer();
 render();
