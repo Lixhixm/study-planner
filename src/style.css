@@ -202,3 +202,7 @@ form button { color: #fff; }
 .dlg.shot button { color: var(--fg); background: var(--card); border: 1px solid var(--line2); border-radius: 10px; padding: 10px; font-size: 16px; }
 .dlg.shot button[data-dshare] { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
 .dlg.shot .hint { margin: 2px 0 0; }
+.cd .n.red { color: var(--accent); }
+.cd .evs { display: flex; flex-direction: column; gap: 2px; width: 100%; min-width: 0; }
+.cd .hol { font-size: 11px; font-weight: 600; color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cd .ev2 { font-size: 11px; background: var(--line); border-radius: 4px; padding: 1px 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

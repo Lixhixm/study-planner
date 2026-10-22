@@ -1,10 +1,14 @@
 import "./style.css";
 import html2canvas from "html2canvas";
+import { HOLIDAYS, EXAMS } from "./events";
 
 type Task = { id: string; subject: string; text: string; status: number; next?: string; type?: string; score?: number; max?: number; rkey?: string; detail?: string; icon?: string };
 type State = {
   ddays: { id: string; name: string; date: string }[];
   theme: "dark" | "light" | "auto";
+  events: { id: string; name: string; date: string }[]; // 직접 추가한 일정
+  showHolidays: boolean;
+  showExams: boolean;
   subjects: { id: string; name: string; color: string }[];
   tasks: Record<string, Task[]>; // date -> tasks
   paint: Record<string, string>; // "date|h|c" -> subject id
@@ -30,6 +34,9 @@ const KEY = "planner-v1";
 const defaults: State = {
   ddays: [{ id: "exam", name: "수능", date: "2026-11-19" }],
   theme: "dark",
+  events: [],
+  showHolidays: true,
+  showExams: true,
   subjects: [
     { id: "kor", name: "국어", color: "#f08a4b" },
     { id: "math", name: "수학", color: "#2fa8e0" },
@@ -149,6 +156,12 @@ function dialogHtml() {
 }
 
 const tabs = () => `<div class="tabrow"><nav class="tabs"><button data-view="planner" class="${view === "planner" ? "on" : ""}">플래너</button><button data-view="cal" class="${view === "cal" ? "on" : ""}">캘린더</button><button data-view="plan" class="${view === "plan" ? "on" : ""}">커리큘럼</button><button data-view="set" class="${view === "set" ? "on" : ""}">설정</button></nav>${view === "planner" ? `<button class="add" id="shot" aria-label="이미지로 저장"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 011 1v9a1 1 0 01-1 1H4a1 1 0 01-1-1V9a1 1 0 011-1z"/><circle cx="12" cy="13" r="3.5"/></svg></button>` : ""}</div>`;
+function dayEvents(dt: string) {
+  const dd = S.ddays.filter((d) => d.date === dt).map((d) => d.name);
+  const hol = S.showHolidays ? HOLIDAYS[dt] : undefined;
+  const evs = [...(S.showExams && EXAMS[dt] ? [EXAMS[dt]] : []), ...S.events.filter((e) => e.date === dt).map((e) => e.name)].filter((n) => !dd.includes(n));
+  return { hol, evs };
+}
 const dayIdx = (a: string, b: string) => Math.round((parse(b).getTime() - parse(a).getTime()) / 864e5);
 const DAYW = 26;
 
@@ -228,10 +241,12 @@ function renderCal() {
     const scores = tasks.filter((t) => t.type === "exam" && t.score != null).map((t) => `<em style="--c:${subj(t.subject).color}">${subj(t.subject).name} ${t.score}/${t.max ?? 100}</em>`).join("");
     const C = 2 * Math.PI * 11;
     const dd = S.ddays.filter((d) => d.date === dt);
+    const { hol, evs } = dayEvents(dt);
+    const names = `${hol ? `<b class="hol">${esc(hol)}</b>` : ""}${evs.map((n) => `<span class="ev2">${esc(n)}</span>`).join("")}`;
     const gauge = tasks.length && dt <= today // 미래 날짜는 아직 달성률이 의미 없다
       ? `<svg class="gauge" viewBox="0 0 28 28"><circle cx="14" cy="14" r="11" fill="none" stroke="var(--line2)" stroke-width="3"/><circle cx="14" cy="14" r="11" fill="none" stroke="var(--accent)" stroke-width="3" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - pct / 100)}" transform="rotate(-90 14 14)"/><text x="14" y="17" text-anchor="middle">${pct}%</text></svg>`
       : "";
-    cells += `<button class="cd${dt === today ? " today" : ""}${dd.length ? " exam" : ""}" data-d="${dt}"><span class="ct"><span class="nl"><span class="n">${n}</span>${dd.length ? `<small class="ed">${esc(dd.map((d) => d.name).join(", "))}</small>` : ""}</span>${gauge}</span><span class="tm">${total ? fmt(total) : ""}</span><span class="sb${total ? "" : " none"}">${seg}</span>${scores}</button>`;
+    cells += `<button class="cd${dt === today ? " today" : ""}${dd.length ? " exam" : ""}" data-d="${dt}"><span class="ct"><span class="nl"><span class="n${hol || new Date(dt + "T00:00:00").getDay() === 0 ? " red" : ""}">${n}</span>${dd.length ? `<small class="ed">${esc(dd.map((d) => d.name).join(", "))}</small>` : ""}</span>${gauge}</span>${names ? `<span class="evs">${names}</span>` : ""}<span class="tm">${total ? fmt(total) : ""}</span><span class="sb${total ? "" : " none"}">${seg}</span>${scores}</button>`;
   }
 
   document.getElementById("app")!.innerHTML = `${tabs()}
@@ -251,6 +266,7 @@ function renderSet() {
     <div class="sets">
       <section class="grp set"><header><span class="sn" style="color:var(--fg)">화면</span></header><div class="seg">${[["dark", "다크"], ["light", "라이트"], ["auto", "시스템"]].map(([k, n]) => `<button data-theme-set="${k}" class="${S.theme === k ? "on" : ""}">${n}</button>`).join("")}</div></section>
       <section class="grp set"><header><span class="sn" style="color:var(--fg)">D-DAY</span></header>${S.ddays.map((d) => `<div class="srow"><input class="sname" value="${esc(d.name)}" data-dname="${d.id}" autocomplete="off" /><input type="date" class="dd" value="${d.date}" data-ddate="${d.id}" /><button class="del" data-dddel="${d.id}" aria-label="삭제">${DEL}</button></div>`).join("")}<div class="srow"><button class="pill" id="ddadd">+ D-day 추가</button></div></section>
+      <section class="grp set"><header><span class="sn" style="color:var(--fg)">캘린더 일정</span></header><div class="seg">${[["showHolidays", "공휴일"], ["showExams", "수능 일정"]].map(([k, n]) => `<button data-tog="${k}" class="${S[k as "showHolidays" | "showExams"] ? "on" : ""}">${n}</button>`).join("")}</div>${S.events.map((e) => `<div class="srow"><input class="sname" value="${esc(e.name)}" data-ename="${e.id}" autocomplete="off" /><input type="date" class="dd" value="${e.date}" data-edate="${e.id}" /><button class="del" data-edel="${e.id}" aria-label="삭제">${DEL}</button></div>`).join("")}<div class="srow"><button class="pill" id="eadd">+ 일정 추가</button></div></section>
       <section class="grp set"><header><span class="sn" style="color:var(--fg)">과목</span></header>${subs}<div class="srow"><button class="pill" id="sadd">+ 과목 추가</button></div></section>
       <section class="grp set"><header><span class="sn" style="color:var(--fg)">반복 할 일</span></header>${reps}
         <form id="repform"><select name="s">${S.subjects.map((sj) => `<option value="${sj.id}">${sj.name}</option>`).join("")}</select><select name="y">${PICK.map((k) => `<option value="${k}">${TYPES[k].name}</option>`).join("")}</select><input name="t" placeholder="할 일 (예: 영단어 50개)" autocomplete="off" />
@@ -314,7 +330,7 @@ function render() {
   document.getElementById("app")!.innerHTML = `${tabs()}
     <div class="top">
       <div class="dateblock">
-        <div class="label">${d.getFullYear()}년 ${d.getMonth() + 1}월</div>
+        <div class="label">${d.getFullYear()}년 ${d.getMonth() + 1}월${(() => { const e = dayEvents(date); return [e.hol, ...e.evs].filter(Boolean).map((n) => ` · ${esc(n!)}`).join(""); })()}</div>
         <div class="date"><button class="nav" data-day="-1">‹</button><span class="big">${d.getDate()}</span><span class="wd">${"일월화수목금토"[d.getDay()]}요일</span><button class="nav" data-day="1">›</button></div>
       </div>
       <div class="chips">${chips}</div>
@@ -478,6 +494,9 @@ app.addEventListener("click", (e) => {
   else if (b?.dataset.dclear) { const dg = dialog; if (dg?.kind === "score") { const t = (S.tasks[date] ?? []).find((x) => x.id === dg.id); if (t) t.score = undefined; } dialog = null; }
   else if (el.closest("[data-goset]")) view = "set";
   else if (b?.id === "ddadd") S.ddays.push({ id: uid(), name: "D-day", date: shift(iso(new Date()), 30) });
+  else if (b?.id === "eadd") S.events.push({ id: uid(), name: "새 일정", date: iso(new Date()) });
+  else if (b?.dataset.edel) S.events = S.events.filter((x) => x.id !== b.dataset.edel);
+  else if (b?.dataset.tog) { const k = b.dataset.tog as "showHolidays" | "showExams"; S[k] = !S[k]; }
   else if (b?.dataset.dddel) S.ddays = S.ddays.filter((x) => x.id !== b.dataset.dddel);
   else if (b?.dataset.themeSet) { S.theme = b.dataset.themeSet as State["theme"]; applyTheme(); }
   else if (el.classList.contains("cell") && painting && !paintMode) { paintCell(el); }
@@ -490,6 +509,8 @@ app.addEventListener("change", async (e) => {
   if (el.dataset.sname) { subj(el.dataset.sname).name = el.value.trim() || "과목"; save(); return; }
   if (el.dataset.scolor) { subj(el.dataset.scolor).color = el.value; save(); return; }
   if (el.dataset.dname) { const d = S.ddays.find((x) => x.id === el.dataset.dname); if (d) d.name = el.value.trim() || "D-day"; save(); return; }
+  if (el.dataset.ename) { const e = S.events.find((x) => x.id === el.dataset.ename); if (e) e.name = el.value.trim() || "일정"; save(); return; }
+  if (el.dataset.edate) { const e = S.events.find((x) => x.id === el.dataset.edate); if (e && el.value) e.date = el.value; save(); return; }
   if (el.dataset.ddate) { const d = S.ddays.find((x) => x.id === el.dataset.ddate); if (d && el.value) d.date = el.value; save(); return; }
   const f = el.files?.[0];
   if (!f) return;
