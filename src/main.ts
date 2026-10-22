@@ -9,6 +9,8 @@ type State = {
   events: { id: string; name: string; date: string }[]; // 직접 추가한 일정
   showHolidays: boolean;
   showExams: boolean;
+  memos: Record<string, string>; // date -> 하루 메모
+  shotMemo: boolean; // 공유 이미지에 메모 포함
   subjects: { id: string; name: string; color: string }[];
   tasks: Record<string, Task[]>; // date -> tasks
   paint: Record<string, string>; // "date|h|c" -> subject id
@@ -37,6 +39,8 @@ const defaults: State = {
   events: [],
   showHolidays: true,
   showExams: true,
+  memos: {},
+  shotMemo: false,
   subjects: [
     { id: "kor", name: "국어", color: "#f08a4b" },
     { id: "math", name: "수학", color: "#2fa8e0" },
@@ -78,7 +82,7 @@ let adding = false;
 let editing = false;
 let painting = false; // 시간표 칠하기 도구 상자 표시 여부
 let focusAdd = false; // 팝업을 막 열었거나 연속 추가할 때만 입력칸에 포커스 (다른 조작 때 키보드가 뜨지 않게)
-let dialog: { kind: "score"; id: string } | { kind: "shot" } | null = null;
+let dialog: { kind: "score"; id: string } | { kind: "shot" } | { kind: "memo" } | null = null;
 let shotUrl = "";
 let shotFile: File | null = null;
 let shotBusy = false;
@@ -154,7 +158,7 @@ function syncReviews() {
 function focusInput() {
   if (!focusAdd) return;
   focusAdd = false;
-  (document.querySelector(".pop input:not([type=date]), .dlg input") as HTMLElement | null)?.focus();
+  (document.querySelector(".pop input:not([type=date]), .dlg input, .dlg textarea") as HTMLElement | null)?.focus();
 }
 
 // 점수 입력, 수능 날짜: 가운데 작은 상자
@@ -163,6 +167,10 @@ function dialogHtml() {
   if (!dg) return "";
   if (dg.kind === "shot")
     return `<div class="backdrop"><div class="dlg shot"><h3>공유용 이미지</h3><img src="${shotUrl}" alt="플래너" /><div class="r"><button type="button" data-dclose="1">닫기</button><button type="button" data-dshare="1">저장</button></div><p class="hint">저장을 누른 뒤 '이미지 저장'을 고르면 사진 앱에 들어가요.</p></div></div>`;
+  if (dg.kind === "memo") {
+    const d = parse(date);
+    return `<div class="backdrop"><form class="dlg" id="dlgform"><h3>${d.getMonth() + 1}월 ${d.getDate()}일 메모</h3><textarea name="m" rows="8" placeholder="오늘 느낀 점, 오답 이유, 내일 할 말...">${esc(S.memos[date] ?? "")}</textarea><div class="r"><button type="button" data-dclear="1">지우기</button><button type="button" data-dclose="1">취소</button><button>저장</button></div></form></div>`;
+  }
   const t = (S.tasks[date] ?? []).find((x) => x.id === dg.id);
   if (!t) return "";
   return `<div class="backdrop"><form class="dlg" id="dlgform"><h3>${esc(t.text)}</h3><div class="r"><input name="sc" type="number" step="any" inputmode="decimal" placeholder="점수" value="${t.score ?? ""}" /><span>/</span><input name="mx" type="number" step="any" inputmode="decimal" placeholder="만점" value="${t.max ?? 100}" /></div><div class="r"><button type="button" data-dclear="1">지우기</button><button type="button" data-dclose="1">취소</button><button>저장</button></div></form></div>`;
@@ -259,7 +267,7 @@ function renderCal() {
     const gauge = tasks.length && dt <= today // 미래 날짜는 아직 달성률이 의미 없다
       ? `<svg class="gauge" viewBox="0 0 28 28"><circle cx="14" cy="14" r="11" fill="none" stroke="var(--line2)" stroke-width="3"/><circle cx="14" cy="14" r="11" fill="none" stroke="var(--accent)" stroke-width="3" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - pct / 100)}" transform="rotate(-90 14 14)"/><text x="14" y="17" text-anchor="middle">${pct}%</text></svg>`
       : "";
-    cells += `<button class="cd${dt === today ? " today" : ""}${dd.length ? " exam" : ""}" data-d="${dt}"><span class="ct"><span class="nl"><span class="n${hol || new Date(dt + "T00:00:00").getDay() === 0 ? " red" : ""}">${n}</span>${dd.length ? `<small class="ed">${esc(dd.map((d) => d.name).join(", "))}</small>` : ""}</span>${gauge}</span>${names ? `<span class="evs">${names}</span>` : ""}<span class="tm">${total ? fmt(total) : ""}</span><span class="sb${total ? "" : " none"}">${seg}</span>${scores}</button>`;
+    cells += `<button class="cd${dt === today ? " today" : ""}${dd.length ? " exam" : ""}" data-d="${dt}"><span class="ct"><span class="nl"><span class="n${hol || new Date(dt + "T00:00:00").getDay() === 0 ? " red" : ""}">${n}</span>${dd.length ? `<small class="ed">${esc(dd.map((d) => d.name).join(", "))}</small>` : ""}${S.memos[dt] ? `<span class="mi" title="메모">${TYPES.problem.icon}</span>` : ""}</span>${gauge}</span>${names ? `<span class="evs">${names}</span>` : ""}<span class="tm">${total ? fmt(total) : ""}</span><span class="sb${total ? "" : " none"}">${seg}</span>${scores}</button>`;
   }
 
   document.getElementById("app")!.innerHTML = `${tabs()}
@@ -277,7 +285,7 @@ function renderSet() {
   document.getElementById("app")!.innerHTML = `${tabs()}
     <div class="top"><div><div class="label">SETTINGS</div><div class="date"><span class="wd" style="font-size:clamp(28px,5vw,40px);color:var(--fg)">설정</span></div></div></div>
     <div class="sets">
-      <section class="grp set"><header><span class="sn" style="color:var(--fg)">화면</span></header><div class="seg">${[["dark", "다크"], ["light", "라이트"], ["auto", "시스템"]].map(([k, n]) => `<button data-theme-set="${k}" class="${S.theme === k ? "on" : ""}">${n}</button>`).join("")}</div></section>
+      <section class="grp set"><header><span class="sn" style="color:var(--fg)">화면</span></header><div class="seg"><button data-tog="shotMemo" class="${S.shotMemo ? "on" : ""}">공유 이미지에 메모 포함</button></div><div class="seg">${[["dark", "다크"], ["light", "라이트"], ["auto", "시스템"]].map(([k, n]) => `<button data-theme-set="${k}" class="${S.theme === k ? "on" : ""}">${n}</button>`).join("")}</div></section>
       <section class="grp set"><header><span class="sn" style="color:var(--fg)">D-DAY</span></header>${S.ddays.map((d) => `<div class="srow"><input class="sname" value="${esc(d.name)}" data-dname="${d.id}" autocomplete="off" /><input type="date" class="dd" value="${d.date}" data-ddate="${d.id}" /><button class="del" data-dddel="${d.id}" aria-label="삭제">${DEL}</button></div>`).join("")}<div class="srow"><button class="pill" id="ddadd">+ D-day 추가</button></div></section>
       <section class="grp set"><header><span class="sn" style="color:var(--fg)">캘린더 일정</span></header><div class="seg">${[["showHolidays", "공휴일"], ["showExams", "수능 일정"]].map(([k, n]) => `<button data-tog="${k}" class="${S[k as "showHolidays" | "showExams"] ? "on" : ""}">${n}</button>`).join("")}</div>${S.events.map((e) => `<div class="srow"><input class="sname" value="${esc(e.name)}" data-ename="${e.id}" autocomplete="off" /><input type="date" class="dd" value="${e.date}" data-edate="${e.id}" /><button class="del" data-edel="${e.id}" aria-label="삭제">${DEL}</button></div>`).join("")}<div class="srow"><button class="pill" id="eadd">+ 일정 추가</button></div></section>
       <section class="grp set"><header><span class="sn" style="color:var(--fg)">과목</span></header>${subs}<div class="srow"><button class="pill" id="sadd">+ 과목 추가</button></div></section>
@@ -357,6 +365,7 @@ function render() {
       <div class="left">
         <div class="head"><div class="label">TASKS</div><div class="acts"><button class="pill${editing ? " on" : ""}" id="edit">편집</button><button class="add" id="add">${adding ? "×" : "+"}</button>${pop}</div></div>
         ${rows}
+        <div class="memosec"><div class="head"><div class="label">MEMO</div></div><button class="memo" data-memo="1">${S.memos[date] ? esc(S.memos[date]) : `<span class="ph">메모를 남겨보세요</span>`}</button></div>
       </div>
       <div class="right">
         <div class="head"><div class="label">TOTAL TIME</div></div>
@@ -401,7 +410,7 @@ async function capture() {
   const root = document.createElement("div");
   root.className = "shotroot";
   root.innerHTML = document.getElementById("app")!.innerHTML;
-  root.querySelectorAll(".tabrow, .acts, .pop, .tools, #pt, .backdrop").forEach((n) => n.remove());
+  root.querySelectorAll(`.tabrow, .acts, .pop, .tools, #pt, .backdrop${S.shotMemo ? "" : ", .memosec"}`).forEach((n) => n.remove());
   document.body.appendChild(root);
   try {
     // html2canvas가 인라인 SVG를 일부 잘라 그려서, 아이콘은 이미지로 바꿔 넣는다
@@ -508,12 +517,13 @@ app.addEventListener("click", (e) => {
   else if (b?.id === "pt") painting = !painting;
   else if (b?.dataset.dclose) dialog = null;
   else if (el.classList.contains("backdrop")) dialog = null;
-  else if (b?.dataset.dclear) { const dg = dialog; if (dg?.kind === "score") { const t = (S.tasks[date] ?? []).find((x) => x.id === dg.id); if (t) t.score = undefined; } dialog = null; }
+  else if (b?.dataset.memo) { dialog = { kind: "memo" }; focusAdd = true; }
+  else if (b?.dataset.dclear) { const dg = dialog; if (dg?.kind === "memo") delete S.memos[date]; if (dg?.kind === "score") { const t = (S.tasks[date] ?? []).find((x) => x.id === dg.id); if (t) t.score = undefined; } dialog = null; }
   else if (el.closest("[data-goset]")) view = "set";
   else if (b?.id === "ddadd") S.ddays.push({ id: uid(), name: "D-day", date: shift(iso(new Date()), 30) });
   else if (b?.id === "eadd") S.events.push({ id: uid(), name: "새 일정", date: iso(new Date()) });
   else if (b?.dataset.edel) S.events = S.events.filter((x) => x.id !== b.dataset.edel);
-  else if (b?.dataset.tog) { const k = b.dataset.tog as "showHolidays" | "showExams"; S[k] = !S[k]; }
+  else if (b?.dataset.tog) { const k = b.dataset.tog as "showHolidays" | "showExams" | "shotMemo"; S[k] = !S[k]; }
   else if (b?.dataset.dddel) S.ddays = S.ddays.filter((x) => x.id !== b.dataset.dddel);
   else if (b?.dataset.themeSet) { S.theme = b.dataset.themeSet as State["theme"]; applyTheme(); }
   else if (el.classList.contains("cell") && painting && !paintMode) { paintCell(el); }
@@ -547,7 +557,10 @@ app.addEventListener("submit", (e) => {
   if (f.id === "dlgform") {
     const dg = dialog;
     const v = (k: string) => (f.elements.namedItem(k) as HTMLInputElement).value;
-    if (dg?.kind === "score") {
+    if (dg?.kind === "memo") {
+      const m = v("m").trim();
+      if (m) S.memos[date] = m; else delete S.memos[date];
+    } else if (dg?.kind === "score") {
       const t = (S.tasks[date] ?? []).find((x) => x.id === dg.id);
       if (t) { t.score = v("sc") === "" ? undefined : parseFloat(v("sc")); t.max = parseFloat(v("mx")) || 100; }
     }
