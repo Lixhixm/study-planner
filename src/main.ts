@@ -15,7 +15,7 @@ type State = {
   dismissed: string[]; // 지운 자동 복습 "date|rkey"
   lastBackup?: string;
   plans: { id: string; subject: string; name: string; start: string; end: string }[];
-  repeats: { id: string; subject: string; type: string; text: string; days: number[] }[];
+  repeats: { id: string; subject: string; type: string; text: string; days: number[]; from?: string; to?: string; n0?: number; n1?: number; per?: number }[];
 };
 
 const ic = (d: string) => `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
@@ -126,7 +126,20 @@ function syncReviews() {
     for (const t of ts) want.set(`d:${t.id}`, { subject: t.subject, text: t.text, detail: REVIEW_ACTION[t.type!], icon: t.type }); // 1일 복습은 원래 태스크 이름 그대로
   if (d.getDay() === 0) add("w", "주간 복습", shift(date, -6), date);
   if (parse(shift(date, 1)).getDate() === 1) add("m", "월간 복습", iso(new Date(d.getFullYear(), d.getMonth(), 1)), date);
-  for (const r of S.repeats) if (r.days.includes(d.getDay())) want.set(`r:${r.id}`, { subject: r.subject, text: r.text, detail: "", type: r.type });
+  for (const r of S.repeats) {
+    if (!r.days.includes(d.getDay()) || (r.from && date < r.from) || (r.to && date > r.to)) continue;
+    let text = r.text;
+    if (text.includes("{n}")) {
+      const per = r.per ?? 1;
+      let k = 0; // 시작일부터 오늘 전까지 해당 요일이 몇 번 지나갔는지
+      for (let dt = r.from ?? date; dt < date; dt = shift(dt, 1)) if (r.days.includes(parse(dt).getDay())) k++;
+      const a = (r.n0 ?? 1) + k * per;
+      if (r.n1 != null && a > r.n1) continue; // 끝 번호를 넘으면 더 만들지 않는다
+      const b = Math.min(a + per - 1, r.n1 ?? Infinity);
+      text = text.replace(/\{n\}/g, a === b ? `${a}` : `${a}~${b}`);
+    }
+    want.set(`r:${r.id}`, { subject: r.subject, text, detail: "", type: r.type });
+  }
   const list = (S.tasks[date] ??= []);
   for (let i = list.length - 1; i >= 0; i--) if (list[i].rkey && !want.has(list[i].rkey!) && list[i].status === 0) list.splice(i, 1);
   for (const [k, w] of want) {
@@ -260,7 +273,7 @@ function renderCal() {
 const DOW = "일월화수목금토";
 function renderSet() {
   const subs = S.subjects.map((sj) => `<div class="srow"><input type="color" value="${sj.color}" data-scolor="${sj.id}" /><input class="sname" value="${esc(sj.name)}" data-sname="${sj.id}" autocomplete="off" /><button class="del" data-sdel="${sj.id}" aria-label="삭제">${DEL}</button></div>`).join("");
-  const reps = S.repeats.map((r) => `<div class="srow"><span class="ty">${TYPES[r.type].icon}</span><span class="rtxt"><b style="color:${subj(r.subject).color}">${subj(r.subject).name}</b> ${esc(r.text)}<small>${r.days.length === 7 ? "매일" : r.days.map((d) => DOW[d]).join(" ")}</small></span><button class="del" data-rdel="${r.id}" aria-label="삭제">${DEL}</button></div>`).join("") || `<p class="empty" style="padding:12px 0">반복 할 일이 없어요.</p>`;
+  const reps = S.repeats.map((r) => `<div class="srow"><span class="ty">${TYPES[r.type].icon}</span><span class="rtxt"><b style="color:${subj(r.subject).color}">${subj(r.subject).name}</b> ${esc(r.text)}<small>${[r.days.length === 7 ? "매일" : r.days.map((d) => DOW[d]).join(" "), r.from || r.to ? `${r.from ?? ""} ~ ${r.to ?? ""}` : "", r.text.includes("{n}") ? `번호 ${r.n0 ?? 1}~${r.n1 ?? ""} · 하루 ${r.per ?? 1}개` : ""].filter(Boolean).join(" · ")}</small></span><button class="del" data-rdel="${r.id}" aria-label="삭제">${DEL}</button></div>`).join("") || `<p class="empty" style="padding:12px 0">반복 할 일이 없어요.</p>`;
   document.getElementById("app")!.innerHTML = `${tabs()}
     <div class="top"><div><div class="label">SETTINGS</div><div class="date"><span class="wd" style="font-size:clamp(28px,5vw,40px);color:var(--fg)">설정</span></div></div></div>
     <div class="sets">
@@ -269,8 +282,12 @@ function renderSet() {
       <section class="grp set"><header><span class="sn" style="color:var(--fg)">캘린더 일정</span></header><div class="seg">${[["showHolidays", "공휴일"], ["showExams", "수능 일정"]].map(([k, n]) => `<button data-tog="${k}" class="${S[k as "showHolidays" | "showExams"] ? "on" : ""}">${n}</button>`).join("")}</div>${S.events.map((e) => `<div class="srow"><input class="sname" value="${esc(e.name)}" data-ename="${e.id}" autocomplete="off" /><input type="date" class="dd" value="${e.date}" data-edate="${e.id}" /><button class="del" data-edel="${e.id}" aria-label="삭제">${DEL}</button></div>`).join("")}<div class="srow"><button class="pill" id="eadd">+ 일정 추가</button></div></section>
       <section class="grp set"><header><span class="sn" style="color:var(--fg)">과목</span></header>${subs}<div class="srow"><button class="pill" id="sadd">+ 과목 추가</button></div></section>
       <section class="grp set"><header><span class="sn" style="color:var(--fg)">반복 할 일</span></header>${reps}
-        <form id="repform"><select name="s">${S.subjects.map((sj) => `<option value="${sj.id}">${sj.name}</option>`).join("")}</select><select name="y">${PICK.map((k) => `<option value="${k}">${TYPES[k].name}</option>`).join("")}</select><input name="t" placeholder="할 일 (예: 영단어 50개)" autocomplete="off" />
-          <div class="days">${[...DOW].map((c, i) => `<label><input type="checkbox" name="d" value="${i}" checked /><span>${c}</span></label>`).join("")}</div><button>추가</button></form></section>
+        <form id="repform"><select name="s">${S.subjects.map((sj) => `<option value="${sj.id}">${sj.name}</option>`).join("")}</select><select name="y">${PICK.map((k) => `<option value="${k}">${TYPES[k].name}</option>`).join("")}</select><input name="t" placeholder="할 일 (예: 수학 인강 {n}강)" autocomplete="off" />
+          <div class="days">${[...DOW].map((c, i) => `<label><input type="checkbox" name="d" value="${i}" checked /><span>${c}</span></label>`).join("")}</div><details class="adv"><summary>기간 · 번호 설정</summary>
+            <div class="r2"><label>시작일<input type="date" name="from" value="${iso(new Date())}" /></label><label>종료일<input type="date" name="to" /></label></div>
+            <div class="r2"><label>시작 번호<input type="number" name="n0" value="1" /></label><label>끝 번호<input type="number" name="n1" placeholder="제한 없음" /></label><label>하루 개수<input type="number" name="per" value="1" min="1" /></label></div>
+            <p class="hint2">이름에 {n}을 쓰면 번호가 날마다 자동으로 올라가요. 예: 수학 인강 {n}강, 영단어 DAY{n}</p></details>
+          <button>추가</button></form></section>
       <section class="grp set"><header><span class="sn" style="color:var(--fg)">백업</span></header><div class="srow foot"><button class="pill" id="export">백업 내보내기</button><button class="pill" id="import">백업 불러오기</button><span>마지막 백업: ${S.lastBackup ?? "없음"}</span></div></section>
     </div>
     <input type="file" id="file" accept=".json,application/json" hidden />`;
@@ -542,7 +559,10 @@ app.addEventListener("submit", (e) => {
     const text = (f.elements.namedItem("t") as HTMLInputElement).value.trim();
     const days = [...f.querySelectorAll<HTMLInputElement>('input[name="d"]:checked')].map((c) => +c.value);
     if (!text || !days.length) return;
-    S.repeats.push({ id: uid(), subject: (f.elements.namedItem("s") as HTMLSelectElement).value, type: (f.elements.namedItem("y") as HTMLSelectElement).value, text, days });
+    const g = (k: string) => (f.elements.namedItem(k) as HTMLInputElement).value;
+    let [from, to] = [g("from") || undefined, g("to") || undefined];
+    if (from && to && from > to) [from, to] = [to, from];
+    S.repeats.push({ id: uid(), subject: g("s"), type: g("y"), text, days, from, to, n0: g("n0") === "" ? 1 : +g("n0"), n1: g("n1") === "" ? undefined : +g("n1"), per: Math.max(1, +g("per") || 1) });
     save(); render();
     return;
   }
